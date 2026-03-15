@@ -17,7 +17,7 @@ error() { echo -e "${RED}[✗]${NC} $1"; }
 DATA_SRC="/mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow"
 DATA_DST="$HOME/data/H2103d_test_colmap_workflow"
 REPO_DIR="$HOME/gaussian-splatting-cuda"
-CUDA_ROOT="/usr/local/cuda-12.8"
+CUDA_ROOT="/usr/local/cuda"
 
 # ─── Preflight Checks ───────────────────────────────────────────────────────
 

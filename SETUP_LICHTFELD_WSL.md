@@ -264,7 +264,7 @@ cd ..
 # Create build directory
 cmake --preset linux-release \
     -DCMAKE_CUDA_ARCHITECTURES=120 \
-    -DCUDAToolkit_ROOT=/usr/local/cuda-12.8 \
+    -DCUDAToolkit_ROOT=/usr/local/cuda \
     -DVCPKG_ROOT=$HOME/vcpkg
 
 # If the preset doesn't exist, use manual configuration:
@@ -273,7 +273,7 @@ cmake .. \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CUDA_ARCHITECTURES=120 \
-    -DCUDAToolkit_ROOT=/usr/local/cuda-12.8 \
+    -DCUDAToolkit_ROOT=/usr/local/cuda \
     -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DCMAKE_PREFIX_PATH=$HOME/gaussian-splatting-cuda/external/libtorch
 
@@ -514,7 +514,7 @@ cp -r /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow ~/data/
 ls /usr/local/cuda/bin/nvcc
 
 # Explicitly tell CMake where CUDA lives
-cmake .. -DCUDAToolkit_ROOT=/usr/local/cuda-12.8
+cmake .. -DCUDAToolkit_ROOT=/usr/local/cuda
 ```
 
 ### vcpkg build failures
@@ -637,7 +637,7 @@ cmake .. \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CUDA_ARCHITECTURES=120 \
-    -DCUDAToolkit_ROOT=/usr/local/cuda-12.8 \
+    -DCUDAToolkit_ROOT=/usr/local/cuda \
     -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DCMAKE_PREFIX_PATH=$HOME/gaussian-splatting-cuda/external/libtorch
 cmake --build . --config Release -j$(nproc)
