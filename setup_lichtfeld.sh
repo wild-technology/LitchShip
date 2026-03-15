@@ -123,10 +123,18 @@ else
 fi
 
 # CMake 3.30+ required
-CMAKE_VER=$(cmake --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+' | head -1)
-if [ "$(echo "$CMAKE_VER >= 3.30" | bc 2>/dev/null)" = "1" ] 2>/dev/null; then
-    log "CMake $CMAKE_VER already meets requirement (3.30+)"
-else
+CMAKE_OK=false
+if command -v cmake &>/dev/null; then
+    CMAKE_VER=$(cmake --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "0.0.0")
+    CMAKE_MAJOR=$(echo "$CMAKE_VER" | cut -d. -f1)
+    CMAKE_MINOR=$(echo "$CMAKE_VER" | cut -d. -f2)
+    if [ "$CMAKE_MAJOR" -gt 3 ] 2>/dev/null || { [ "$CMAKE_MAJOR" -eq 3 ] && [ "$CMAKE_MINOR" -ge 30 ]; } 2>/dev/null; then
+        CMAKE_OK=true
+        log "CMake $CMAKE_VER already meets requirement (3.30+)"
+    fi
+fi
+
+if [ "$CMAKE_OK" = false ]; then
     warn "Installing CMake 3.30+ from Kitware repository..."
     sudo apt-get remove -y cmake 2>/dev/null || true
     wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null \
@@ -135,7 +143,7 @@ else
         | sudo tee /etc/apt/sources.list.d/kitware.list
     sudo apt-get update -qq
     sudo apt-get install -y cmake
-    log "CMake $(cmake --version | head -1 | grep -oP '\d+\.\d+\.\d+') installed"
+    log "CMake $(cmake --version | head -1) installed"
 fi
 
 echo ""
