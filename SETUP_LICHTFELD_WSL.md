@@ -124,16 +124,14 @@ cd /usr/local/cuda/extras/demo_suite/
 
 ## 5. Install Build Dependencies
 
-LichtFeld Studio uses C++23, CMake, vcpkg, and LibTorch. Install everything:
+LichtFeld Studio requires **C++23** (needs GCC 14+), **CMake 3.30+**, vcpkg,
+and LibTorch. Ubuntu 24.04 ships GCC 13 and CMake 3.28, so both need upgrading.
 
 ```bash
 # Essential build tools
 sudo apt-get update
 sudo apt-get install -y \
     build-essential \
-    cmake \
-    gcc \
-    g++ \
     git \
     curl \
     zip \
@@ -143,7 +141,8 @@ sudo apt-get install -y \
     ninja-build \
     python3 \
     python3-dev \
-    python3-pip
+    python3-pip \
+    software-properties-common
 
 # Libraries needed by vcpkg dependencies
 sudo apt-get install -y \
@@ -164,6 +163,47 @@ sudo apt-get install -y \
     yasm
 ```
 
+### Install GCC 14 (Required — C++23)
+
+Ubuntu 24.04 ships GCC 13, but LichtFeld Studio's C++23 codebase requires
+**GCC 14 or newer**. Install it via the Ubuntu toolchain PPA:
+
+```bash
+sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+sudo apt-get update
+sudo apt-get install -y gcc-14 g++-14
+
+# Set GCC 14 as the default compiler
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 14
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 14
+
+# Verify
+gcc --version
+# → Should show gcc 14.x
+```
+
+### Install CMake 3.30+ (Required)
+
+Ubuntu 24.04 ships CMake 3.28, but LichtFeld Studio requires **3.30+**.
+Install the latest via Kitware's APT repository:
+
+```bash
+# Remove old cmake if installed
+sudo apt-get remove -y cmake 2>/dev/null || true
+
+# Add Kitware APT repository
+wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null \
+    | gpg --dearmor - | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ noble main' \
+    | sudo tee /etc/apt/sources.list.d/kitware.list
+sudo apt-get update
+sudo apt-get install -y cmake
+
+# Verify
+cmake --version
+# → Should show 3.30+
+```
+
 ### Install vcpkg
 
 ```bash
@@ -180,23 +220,6 @@ echo 'export PATH=$VCPKG_ROOT:$PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-### GCC Version Check
-
-Ubuntu 24.04 ships GCC 13 which is compatible with CUDA 12.8+. Verify:
-
-```bash
-gcc --version
-# → Should show gcc 13.x
-```
-
-If you hit compiler errors, fall back to GCC 12:
-
-```bash
-sudo apt-get install -y gcc-12 g++-12
-sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 12
-sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12
-```
-
 ---
 
 ## 6. Clone & Build LichtFeld Studio
@@ -205,19 +228,24 @@ sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 12
 
 ```bash
 cd ~
-git clone https://github.com/MrNeRF/gaussian-splatting-cuda.git
+git clone --recursive https://github.com/MrNeRF/gaussian-splatting-cuda.git
 cd gaussian-splatting-cuda
 ```
+
+> **Note:** Use `--recursive` to also clone submodules (gsplat rasterization
+> backend, etc.).
 
 ### Download LibTorch
 
 LichtFeld Studio requires LibTorch (the C++ distribution of PyTorch) built
-for CUDA 12.8:
+for CUDA 12.8. **Do NOT install LibTorch via vcpkg** — there is a
+[known vcpkg bug](https://github.com/microsoft/vcpkg/issues/36844) that causes
+"Found two conflicting CUDA installs" errors.
 
 ```bash
 mkdir -p external && cd external
 
-# Download LibTorch for CUDA 12.8 (Linux, C++11 ABI)
+# Download LibTorch for CUDA 12.8 (Linux, cxx11 ABI)
 wget https://download.pytorch.org/libtorch/cu128/libtorch-cxx11-abi-shared-with-deps-2.7.0%2Bcu128.cpu.zip -O libtorch.zip
 unzip libtorch.zip
 rm libtorch.zip
@@ -262,6 +290,19 @@ cmake --build . --config Release -j$(nproc)
 | `CMAKE_TOOLCHAIN_FILE` | Lets vcpkg manage C++ dependencies |
 | `CMAKE_PREFIX_PATH` | Points to LibTorch |
 | `-j$(nproc)` | Uses all CPU cores (Threadripper advantage) |
+
+**Additional CMake options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `BUILD_CUDA_PTX_ONLY` | OFF | PTX-only build (smaller binary, JIT at runtime — portable across GPU archs) |
+| `BUILD_PORTABLE` | OFF | Self-contained distributable build (implies PTX-only) |
+| `BUILD_CUDA_MIN_SM` | 75 | Minimum SM version for PTX builds |
+| `BUILD_TESTS` | OFF | Build the test suite |
+| `ENABLE_CUDA_GL_INTEROP` | ON | Enable CUDA/OpenGL interop (needed for viewer) |
+
+> **Tip:** If you only want to train (no interactive viewer), you can build
+> without OpenGL interop to avoid X11/display dependencies.
 
 ### vcpkg Dependencies (Installed Automatically)
 
@@ -356,17 +397,27 @@ cp /mnt/c/Users/WildTech/Desktop/H2103d_Northampton/points3D.txt \
 
 ## 8. Run Training
 
+The binary is built as `lichtfeld-studio` (the project was rebranded from
+gaussian-splatting-cuda). Training parameters can be passed via CLI flags
+or via JSON config files in the `parameter/` directory.
+
 ```bash
 cd ~/gaussian-splatting-cuda
 
+# First, check available options
+./build/bin/lichtfeld-studio --help
+
 # Basic training run
-./build/gaussian_splatting_cuda \
+./build/bin/lichtfeld-studio \
     -d ~/data/H2103d_Northampton \
     -o ~/output/H2103d_Northampton \
     --strategy mcmc \
     --max-cap 500000 \
     -i 30000
 ```
+
+> **Note:** The exact binary path may vary — check `build/bin/` or just
+> `build/` for the executable. Run `find build/ -type f -executable` if unsure.
 
 ### Command-Line Arguments
 
@@ -378,6 +429,19 @@ cd ~/gaussian-splatting-cuda
 | `-r, --resize_factor NUM` | Image downscale factor (1=full res) | 1 |
 | `--strategy [mcmc\|default]` | Optimization strategy | mcmc |
 | `--max-cap NUM` | Maximum number of Gaussians (MCMC) | 1000000 |
+
+> Run `--help` for the full list — additional parameters may be available for
+> the interactive viewer mode, bilateral grid settings, etc.
+
+### JSON Config Files
+
+The `parameter/` directory contains JSON configuration files with default
+training parameters. You can copy and modify these for your scene:
+
+```bash
+ls ~/gaussian-splatting-cuda/parameter/
+# Inspect defaults and adjust as needed
+```
 
 ### Strategy Notes
 
@@ -393,6 +457,22 @@ cd ~/gaussian-splatting-cuda
   for full resolution.
 - **Threadripper:** The multi-core advantage mainly helps during the build
   phase. Training is GPU-bound.
+
+### RTX 5090 Blackwell Compatibility Warning
+
+The RTX 5090 (sm_120) is a new architecture. While the project compiles with
+CUDA 12.8+ targeting sm_120, the custom CUDA kernels in `gsplat/` and
+`fastgs/` were originally tuned for Ampere/Ada architectures. Blackwell has
+different warp scheduling and shared memory layouts. If you encounter runtime
+errors or incorrect rendering:
+
+1. Try building with PTX-only mode for JIT compilation:
+   ```bash
+   cmake .. -DBUILD_CUDA_PTX_ONLY=ON -DBUILD_CUDA_MIN_SM=75
+   ```
+2. Check the project's GitHub issues for sm_120-specific fixes.
+3. The PTX build produces a much smaller binary (~66 MB vs ~750 MB) but has
+   a 5-15 second JIT compilation delay on first launch.
 
 ---
 
@@ -454,17 +534,25 @@ Some Threadripper + RTX 5090 systems have PCIe 5.0 signal integrity issues.
 Set PCIe to **Gen 4** mode in BIOS — less than 1% performance impact for
 GPU compute.
 
-### GCC version incompatibility
+### GCC version incompatibility / C++23 errors
 
-If you see compiler errors about unsupported C++ features:
+LichtFeld Studio requires C++23, which needs **GCC 14+**. Ubuntu 24.04 ships
+GCC 13 — you must upgrade:
 ```bash
-# Check your GCC version
 gcc --version
-
-# CUDA 12.8 supports GCC up to 13. Ubuntu 24.04 ships GCC 13.
-# If needed, install a specific version:
-sudo apt-get install gcc-12 g++-12
+# If < 14, install GCC 14:
+sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+sudo apt-get update
+sudo apt-get install -y gcc-14 g++-14
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 14
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 14
 ```
+
+### LibTorch "two conflicting CUDA installs" error
+
+Do NOT install LibTorch via vcpkg. Download it manually into `external/`
+as described in the build section. See
+[vcpkg issue #36844](https://github.com/microsoft/vcpkg/issues/36844).
 
 ---
 
@@ -492,15 +580,32 @@ grep -q 'cuda/bin' ~/.bashrc || {
 export PATH=/usr/local/cuda/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
 
-echo "=== [2/6] Installing Build Dependencies ==="
+echo "=== [2/7] Installing Build Dependencies + GCC 14 + CMake 3.30+ ==="
 sudo apt-get install -y \
-    build-essential cmake gcc g++ git curl zip unzip tar \
+    build-essential git curl zip unzip tar \
     pkg-config ninja-build python3 python3-dev python3-pip \
+    software-properties-common \
     libssl-dev libx11-dev libxrandr-dev libxi-dev \
     libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev \
     libwayland-dev libxkbcommon-dev autoconf automake libtool nasm yasm
 
-echo "=== [3/6] Installing vcpkg ==="
+# GCC 14 (required for C++23)
+sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+sudo apt-get update
+sudo apt-get install -y gcc-14 g++-14
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 14
+sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 14
+
+# CMake 3.30+ (required)
+sudo apt-get remove -y cmake 2>/dev/null || true
+wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null \
+    | gpg --dearmor - | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ noble main' \
+    | sudo tee /etc/apt/sources.list.d/kitware.list
+sudo apt-get update
+sudo apt-get install -y cmake
+
+echo "=== [3/7] Installing vcpkg ==="
 if [ ! -d "$HOME/vcpkg" ]; then
     git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
     ~/vcpkg/bootstrap-vcpkg.sh
@@ -511,13 +616,13 @@ grep -q 'VCPKG_ROOT' ~/.bashrc || {
     echo 'export PATH=$VCPKG_ROOT:$PATH' >> ~/.bashrc
 }
 
-echo "=== [4/6] Cloning LichtFeld Studio ==="
+echo "=== [4/7] Cloning LichtFeld Studio ==="
 if [ ! -d "$HOME/gaussian-splatting-cuda" ]; then
-    git clone https://github.com/MrNeRF/gaussian-splatting-cuda.git ~/gaussian-splatting-cuda
+    git clone --recursive https://github.com/MrNeRF/gaussian-splatting-cuda.git ~/gaussian-splatting-cuda
 fi
 cd ~/gaussian-splatting-cuda
 
-echo "=== [5/6] Downloading LibTorch ==="
+echo "=== [5/7] Downloading LibTorch ==="
 mkdir -p external && cd external
 if [ ! -d "libtorch" ]; then
     wget -q "https://download.pytorch.org/libtorch/cu128/libtorch-cxx11-abi-shared-with-deps-2.7.0%2Bcu128.cpu.zip" -O libtorch.zip
@@ -526,7 +631,7 @@ if [ ! -d "libtorch" ]; then
 fi
 cd ..
 
-echo "=== [6/6] Building ==="
+echo "=== [6/7] Building ==="
 mkdir -p build && cd build
 cmake .. \
     -G Ninja \
@@ -539,11 +644,11 @@ cmake --build . --config Release -j$(nproc)
 
 echo ""
 echo "=== BUILD COMPLETE ==="
-echo "Binary: ~/gaussian-splatting-cuda/build/gaussian_splatting_cuda"
+echo "Binary: find ~/gaussian-splatting-cuda/build/ -type f -executable"
 echo ""
 echo "Next steps:"
 echo "  1. Copy your data:  cp -r /mnt/c/Users/WildTech/Desktop/H2103d_Northampton ~/data/"
-echo "  2. Run training:    ./gaussian_splatting_cuda -d ~/data/H2103d_Northampton -o ~/output/H2103d --strategy mcmc"
+echo "  2. Run training:    ./build/bin/lichtfeld-studio -d ~/data/H2103d_Northampton -o ~/output/H2103d --strategy mcmc"
 ```
 
 Save this as `~/setup_lichtfeld.sh`, then run:

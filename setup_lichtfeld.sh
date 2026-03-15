@@ -89,14 +89,45 @@ echo "=== [2/7] Build Dependencies ==="
 
 sudo apt-get update -qq
 sudo apt-get install -y \
-    build-essential cmake gcc g++ git curl zip unzip tar \
+    build-essential git curl zip unzip tar \
     pkg-config ninja-build python3 python3-dev python3-pip \
+    software-properties-common \
     libssl-dev libx11-dev libxrandr-dev libxi-dev \
     libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev \
     libwayland-dev libxkbcommon-dev autoconf automake libtool nasm yasm \
     2>&1 | tail -1
 
-log "Build dependencies installed"
+log "Base dependencies installed"
+
+# GCC 14+ required for C++23
+if gcc --version 2>/dev/null | grep -q ' 1[4-9]\.\| [2-9][0-9]\.'; then
+    log "GCC 14+ already installed: $(gcc --version | head -1)"
+else
+    warn "Installing GCC 14 (required for C++23)..."
+    sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+    sudo apt-get update -qq
+    sudo apt-get install -y gcc-14 g++-14
+    sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 14
+    sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 14
+    log "GCC 14 installed and set as default"
+fi
+
+# CMake 3.30+ required
+CMAKE_VER=$(cmake --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+' | head -1)
+if [ "$(echo "$CMAKE_VER >= 3.30" | bc 2>/dev/null)" = "1" ] 2>/dev/null; then
+    log "CMake $CMAKE_VER already meets requirement (3.30+)"
+else
+    warn "Installing CMake 3.30+ from Kitware repository..."
+    sudo apt-get remove -y cmake 2>/dev/null || true
+    wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null \
+        | gpg --dearmor - | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+    echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ noble main' \
+        | sudo tee /etc/apt/sources.list.d/kitware.list
+    sudo apt-get update -qq
+    sudo apt-get install -y cmake
+    log "CMake $(cmake --version | head -1 | grep -oP '\d+\.\d+\.\d+') installed"
+fi
+
 echo ""
 
 # ─── Step 3: vcpkg ──────────────────────────────────────────────────────────
@@ -131,8 +162,8 @@ if [ -d "$REPO_DIR/.git" ]; then
     cd "$REPO_DIR"
     git pull --ff-only || warn "Could not fast-forward; using existing state"
 else
-    git clone https://github.com/MrNeRF/gaussian-splatting-cuda.git "$REPO_DIR"
-    log "Repository cloned"
+    git clone --recursive https://github.com/MrNeRF/gaussian-splatting-cuda.git "$REPO_DIR"
+    log "Repository cloned (with submodules)"
 fi
 
 cd "$REPO_DIR"
@@ -262,7 +293,12 @@ echo "          └── points3D.txt"
 echo ""
 echo "To run training:"
 echo "  cd $REPO_DIR"
-echo "  ./build/gaussian_splatting_cuda \\"
+echo ""
+echo "  # Find the binary (name may vary):"
+echo "  find build/ -type f -executable -name 'lichtfeld*' -o -name 'gaussian*' 2>/dev/null | head -3"
+echo ""
+echo "  # Example training command:"
+echo "  ./build/bin/lichtfeld-studio \\"
 echo "      -d $DATA_DST \\"
 echo "      -o ~/output/H2103d_Northampton \\"
 echo "      --strategy mcmc \\"
