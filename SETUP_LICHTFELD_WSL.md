@@ -1,7 +1,7 @@
 # LichtFeld Studio (gaussian-splatting-cuda) — WSL2 Build & Run Guide
 
 > **System:** RTX 5090 (Blackwell, sm_120) · Threadripper · 196 GB RAM · WSL2 Ubuntu 24.04
-> **Data location:** `C:\Users\WildTech\Desktop\H2103d_Northampton\images`
+> **Data location:** `C:\Users\WildTech\Desktop\H2103d_test_colmap_workflow` (RealityScan 2.1 export)
 
 ---
 
@@ -264,7 +264,7 @@ cd ..
 # Create build directory
 cmake --preset linux-release \
     -DCMAKE_CUDA_ARCHITECTURES=120 \
-    -DCUDAToolkit_ROOT=/usr/local/cuda \
+    -DCUDAToolkit_ROOT=/usr/local/cuda-12.8 \
     -DVCPKG_ROOT=$HOME/vcpkg
 
 # If the preset doesn't exist, use manual configuration:
@@ -273,7 +273,7 @@ cmake .. \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CUDA_ARCHITECTURES=120 \
-    -DCUDAToolkit_ROOT=/usr/local/cuda \
+    -DCUDAToolkit_ROOT=/usr/local/cuda-12.8 \
     -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DCMAKE_PREFIX_PATH=$HOME/gaussian-splatting-cuda/external/libtorch
 
@@ -328,11 +328,11 @@ native filesystem:
 
 ```bash
 # Create a working directory
-mkdir -p ~/data/H2103d_Northampton
+mkdir -p ~/data/H2103d_test_colmap_workflow
 
 # Copy your images and COLMAP text files
-cp -r "/mnt/c/Users/WildTech/Desktop/H2103d_Northampton/images" \
-      ~/data/H2103d_Northampton/images
+cp -r "/mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow/images" \
+      ~/data/H2103d_test_colmap_workflow/images
 ```
 
 ### Expected COLMAP Text Data Structure
@@ -341,7 +341,7 @@ LichtFeld Studio expects a standard COLMAP reconstruction layout. Since you
 have COLMAP text files, organize them like this:
 
 ```
-~/data/H2103d_Northampton/
+~/data/H2103d_test_colmap_workflow/
 ├── images/                    # Your photographs
 │   ├── IMG_0001.jpg
 │   ├── IMG_0002.jpg
@@ -356,16 +356,16 @@ have COLMAP text files, organize them like this:
 If your COLMAP text files are loose in the data directory, move them:
 
 ```bash
-mkdir -p ~/data/H2103d_Northampton/sparse/0
+mkdir -p ~/data/H2103d_test_colmap_workflow/sparse/0
 
 # Move/copy your COLMAP text files into the sparse directory
 # Adjust these paths based on where your .txt files actually are
-cp /mnt/c/Users/WildTech/Desktop/H2103d_Northampton/cameras.txt \
-   ~/data/H2103d_Northampton/sparse/0/
-cp /mnt/c/Users/WildTech/Desktop/H2103d_Northampton/images.txt \
-   ~/data/H2103d_Northampton/sparse/0/
-cp /mnt/c/Users/WildTech/Desktop/H2103d_Northampton/points3D.txt \
-   ~/data/H2103d_Northampton/sparse/0/
+cp /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow/cameras.txt \
+   ~/data/H2103d_test_colmap_workflow/sparse/0/
+cp /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow/images.txt \
+   ~/data/H2103d_test_colmap_workflow/sparse/0/
+cp /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow/points3D.txt \
+   ~/data/H2103d_test_colmap_workflow/sparse/0/
 ```
 
 ### COLMAP Text File Format Reference
@@ -409,8 +409,8 @@ cd ~/gaussian-splatting-cuda
 
 # Basic training run
 ./build/bin/lichtfeld-studio \
-    -d ~/data/H2103d_Northampton \
-    -o ~/output/H2103d_Northampton \
+    -d ~/data/H2103d_test_colmap_workflow \
+    -o ~/output/H2103d_test_colmap_workflow \
     --strategy mcmc \
     --max-cap 500000 \
     -i 30000
@@ -504,7 +504,7 @@ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 You're probably reading from `/mnt/c/`. Copy data to `~/`:
 ```bash
-cp -r /mnt/c/Users/WildTech/Desktop/H2103d_Northampton ~/data/
+cp -r /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow ~/data/
 ```
 
 ### CMake can't find CUDA
@@ -514,7 +514,7 @@ cp -r /mnt/c/Users/WildTech/Desktop/H2103d_Northampton ~/data/
 ls /usr/local/cuda/bin/nvcc
 
 # Explicitly tell CMake where CUDA lives
-cmake .. -DCUDAToolkit_ROOT=/usr/local/cuda
+cmake .. -DCUDAToolkit_ROOT=/usr/local/cuda-12.8
 ```
 
 ### vcpkg build failures
@@ -637,7 +637,7 @@ cmake .. \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CUDA_ARCHITECTURES=120 \
-    -DCUDAToolkit_ROOT=/usr/local/cuda \
+    -DCUDAToolkit_ROOT=/usr/local/cuda-12.8 \
     -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DCMAKE_PREFIX_PATH=$HOME/gaussian-splatting-cuda/external/libtorch
 cmake --build . --config Release -j$(nproc)
@@ -647,8 +647,8 @@ echo "=== BUILD COMPLETE ==="
 echo "Binary: find ~/gaussian-splatting-cuda/build/ -type f -executable"
 echo ""
 echo "Next steps:"
-echo "  1. Copy your data:  cp -r /mnt/c/Users/WildTech/Desktop/H2103d_Northampton ~/data/"
-echo "  2. Run training:    ./build/bin/lichtfeld-studio -d ~/data/H2103d_Northampton -o ~/output/H2103d --strategy mcmc"
+echo "  1. Copy your data:  cp -r /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow ~/data/"
+echo "  2. Run training:    ./build/bin/lichtfeld-studio -d ~/data/H2103d_test_colmap_workflow -o ~/output/H2103d --strategy mcmc"
 ```
 
 Save this as `~/setup_lichtfeld.sh`, then run:

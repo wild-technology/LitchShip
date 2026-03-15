@@ -14,9 +14,10 @@ log()   { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[✗]${NC} $1"; }
 
-DATA_SRC="/mnt/c/Users/WildTech/Desktop/H2103d_Northampton"
-DATA_DST="$HOME/data/H2103d_Northampton"
+DATA_SRC="/mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow"
+DATA_DST="$HOME/data/H2103d_test_colmap_workflow"
 REPO_DIR="$HOME/gaussian-splatting-cuda"
+CUDA_ROOT="/usr/local/cuda-12.8"
 
 # ─── Preflight Checks ───────────────────────────────────────────────────────
 
@@ -53,8 +54,17 @@ echo ""
 
 echo "=== [1/7] CUDA Toolkit ==="
 
-if command -v nvcc &>/dev/null; then
+# Check for CUDA at the known path first
+if [ -x "$CUDA_ROOT/bin/nvcc" ]; then
+    log "CUDA toolkit found at $CUDA_ROOT: $($CUDA_ROOT/bin/nvcc --version | grep release)"
+    # Ensure it's on PATH
+    if ! echo "$PATH" | grep -q "$CUDA_ROOT/bin"; then
+        export PATH="$CUDA_ROOT/bin:$PATH"
+        export LD_LIBRARY_PATH="$CUDA_ROOT/lib64:${LD_LIBRARY_PATH:-}"
+    fi
+elif command -v nvcc &>/dev/null; then
     log "CUDA toolkit already installed: $(nvcc --version | grep release)"
+    CUDA_ROOT="$(dirname $(dirname $(which nvcc)))"
 else
     warn "Installing CUDA Toolkit (WSL-Ubuntu package)..."
     warn "This installs cuda-toolkit ONLY — no Linux GPU driver."
@@ -69,14 +79,14 @@ else
 fi
 
 # Ensure CUDA is on PATH
-if ! echo "$PATH" | grep -q 'cuda/bin'; then
-    export PATH=/usr/local/cuda/bin:$PATH
-    export LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}
-    grep -q 'cuda/bin' ~/.bashrc 2>/dev/null || {
+if ! echo "$PATH" | grep -q 'cuda'; then
+    export PATH="$CUDA_ROOT/bin:$PATH"
+    export LD_LIBRARY_PATH="$CUDA_ROOT/lib64:${LD_LIBRARY_PATH:-}"
+    grep -q 'cuda' ~/.bashrc 2>/dev/null || {
         echo '' >> ~/.bashrc
         echo '# CUDA Toolkit' >> ~/.bashrc
-        echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
-        echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+        echo "export PATH=$CUDA_ROOT/bin:\$PATH" >> ~/.bashrc
+        echo "export LD_LIBRARY_PATH=$CUDA_ROOT/lib64:\$LD_LIBRARY_PATH" >> ~/.bashrc
     }
     log "CUDA added to PATH"
 fi
@@ -205,7 +215,7 @@ mkdir -p build && cd build
 # Try preset first, fall back to manual cmake
 if cmake --preset linux-release \
     -DCMAKE_CUDA_ARCHITECTURES=120 \
-    -DCUDAToolkit_ROOT=/usr/local/cuda \
+    -DCUDAToolkit_ROOT="$CUDA_ROOT" \
     -DVCPKG_ROOT="$VCPKG_ROOT" 2>/dev/null; then
     log "CMake configured via preset"
 else
@@ -214,7 +224,7 @@ else
         -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_CUDA_ARCHITECTURES=120 \
-        -DCUDAToolkit_ROOT=/usr/local/cuda \
+        -DCUDAToolkit_ROOT="$CUDA_ROOT" \
         -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
         -DCMAKE_PREFIX_PATH="$REPO_DIR/external/libtorch"
     log "CMake configured manually"
