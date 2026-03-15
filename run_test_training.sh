@@ -62,6 +62,8 @@ fi
 # Check LichtFeld binary
 BINARY=""
 for candidate in \
+    "$REPO_DIR/build/LichtFeld-Studio" \
+    "$REPO_DIR/build/bin/LichtFeld-Studio" \
     "$REPO_DIR/build/bin/lichtfeld-studio" \
     "$REPO_DIR/build/lichtfeld-studio" \
     "$REPO_DIR/build/bin/gaussian_splatting_cuda" \
@@ -102,19 +104,26 @@ else
     mkdir -p "$FULL_DIR"
 
     # Copy images
-    if [ -d "$DATA_SRC/images" ]; then
+    if [ -d "$DATA_SRC/images" ] && [ "$(ls -A "$DATA_SRC/images/" 2>/dev/null)" ]; then
         cp -r "$DATA_SRC/images" "$FULL_DIR/images"
     else
-        # RealityScan may use different directory names
-        # Try to find the images directory
-        IMG_DIR=$(find "$DATA_SRC" -maxdepth 2 -type d -iname 'images' -o -iname 'input' | head -1)
-        if [ -n "$IMG_DIR" ]; then
-            cp -r "$IMG_DIR" "$FULL_DIR/images"
+        # RealityScan may have images at root level (no images/ subdir)
+        ROOT_IMAGES=$(find "$DATA_SRC" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) | head -1)
+        if [ -n "$ROOT_IMAGES" ]; then
+            mkdir -p "$FULL_DIR/images"
+            info "Images found at root level, copying to images/ subdirectory..."
+            find "$DATA_SRC" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) -exec cp {} "$FULL_DIR/images/" \;
         else
-            error "Cannot find images directory in $DATA_SRC"
-            info "Contents of source:"
-            ls -la "$DATA_SRC/"
-            exit 1
+            # Try to find the images directory
+            IMG_DIR=$(find "$DATA_SRC" -maxdepth 2 -type d -iname 'images' -o -iname 'input' | head -1)
+            if [ -n "$IMG_DIR" ]; then
+                cp -r "$IMG_DIR" "$FULL_DIR/images"
+            else
+                error "Cannot find images in $DATA_SRC"
+                info "Contents of source:"
+                ls -la "$DATA_SRC/"
+                exit 1
+            fi
         fi
     fi
 
@@ -278,7 +287,8 @@ time "$BINARY" \
     --strategy mcmc \
     --max-cap "$MAX_GAUSSIANS" \
     -i "$TEST_ITERATIONS" \
-    -r 2
+    -r 2 \
+    --headless
 
 TRAIN_EXIT=$?
 
