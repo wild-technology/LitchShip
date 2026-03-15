@@ -204,17 +204,42 @@ if [ -d "libtorch" ]; then
 else
     warn "Downloading LibTorch (~2 GB)... this may take a few minutes."
 
+    # Try multiple channels in order of preference.
     # PyTorch 2.7+ uses cxx11 ABI by default for all Linux builds.
-    # Use the stable cu128 build (forward-compatible with CUDA 13.x driver).
+    # cu128 builds are forward-compatible with CUDA 13.x drivers.
     # See: https://pytorch.org/get-started/locally/
-    LIBTORCH_URL="https://download.pytorch.org/libtorch/cu128/libtorch-cxx11-abi-shared-with-deps-latest.zip"
+    LIBTORCH_URLS=(
+        "https://download.pytorch.org/libtorch/nightly/cu128/libtorch-cxx11-abi-shared-with-deps-latest.zip"
+        "https://download.pytorch.org/libtorch/test/cu128/libtorch-cxx11-abi-shared-with-deps-latest.zip"
+        "https://download.pytorch.org/libtorch/nightly/cu128/libtorch-shared-with-deps-latest.zip"
+        "https://download.pytorch.org/libtorch/cu126/libtorch-cxx11-abi-shared-with-deps-latest.zip"
+    )
 
-    info "URL: $LIBTORCH_URL"
-    if ! wget --progress=bar:force:noscroll -O libtorch.zip "$LIBTORCH_URL"; then
-        # Fallback: try the test channel
-        warn "Stable channel failed, trying test channel..."
-        LIBTORCH_URL="https://download.pytorch.org/libtorch/test/cu128/libtorch-cxx11-abi-shared-with-deps-latest.zip"
-        wget --progress=bar:force:noscroll -O libtorch.zip "$LIBTORCH_URL"
+    DOWNLOADED=false
+    for LIBTORCH_URL in "${LIBTORCH_URLS[@]}"; do
+        warn "Trying: $LIBTORCH_URL"
+        if wget --progress=bar:force:noscroll -O libtorch.zip "$LIBTORCH_URL" 2>&1; then
+            # Verify it's actually a zip file (not a 404 HTML page)
+            if file libtorch.zip | grep -qi zip; then
+                DOWNLOADED=true
+                log "Downloaded from: $LIBTORCH_URL"
+                break
+            else
+                warn "Downloaded file is not a valid zip — trying next URL..."
+                rm -f libtorch.zip
+            fi
+        else
+            warn "Failed — trying next URL..."
+            rm -f libtorch.zip
+        fi
+    done
+
+    if [ "$DOWNLOADED" = false ]; then
+        error "Could not download LibTorch from any channel."
+        error "Download manually from https://pytorch.org/get-started/locally/"
+        error "Select: LibTorch / C++ / Linux / CUDA 12.8"
+        error "Place the extracted 'libtorch' directory in: $REPO_DIR/external/"
+        exit 1
     fi
 
     # Verify it's actually a zip file (not a 404 HTML page)
