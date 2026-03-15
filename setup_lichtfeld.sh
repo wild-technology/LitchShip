@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # LichtFeld Studio (gaussian-splatting-cuda) — WSL2 Setup Script
-# Target: RTX 5090 (Blackwell, sm_120) · Ubuntu WSL2
+# Target: RTX 5090 (Blackwell, sm_120) · Ubuntu 24.04 WSL2 (20.04+ supported)
 #
 # This script is designed to run with minimal intervention on a fresh WSL2
 # instance. It handles both sudo and non-sudo environments gracefully.

@@ -52,7 +52,7 @@ The script is idempotent — re-running skips completed steps.
 - 20+ GB disk for build artifacts
 
 ### Software
-- **WSL2** with Ubuntu 20.04+ (or native Linux)
+- **WSL2** with Ubuntu 24.04 recommended (20.04+ supported)
 - **NVIDIA driver 570+** on Windows (WSL2) or Linux
 - **CUDA Toolkit** (auto-installed by setup if sudo available)
 - `sudo` access for apt packages, OR pre-installed dependencies (use `--no-sudo`)
@@ -144,8 +144,8 @@ Gaussian splatting can produce a halo/haze around objects, especially on reflect
 
 ## Known Issues
 
-1. **GLIBC 2.31 (Ubuntu 20.04):** Kitware apt repo won't work for CMake. The script uses `pip install cmake` instead.
-2. **Autoconf < 2.71:** vcpkg's Python3 port needs 2.71+. The script builds 2.72 from source automatically.
+1. **Ubuntu 20.04 (GLIBC 2.31):** Kitware apt repo won't work for CMake; autoconf is too old. The script handles both automatically. Ubuntu 24.04 avoids these issues.
+2. **Autoconf < 2.71 (Ubuntu 20.04 only):** vcpkg's Python3 port needs 2.71+. The script builds 2.72 from source automatically.
 3. **Missing libxtst-dev / libibus-1.0-dev:** SDL3 build fails. The included overlay port disables these features.
 4. **WSL2 has no display:** Always use `--headless` for training.
 5. **LibTorch URLs change:** The script tries 4 different download channels.

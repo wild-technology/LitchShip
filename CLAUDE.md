@@ -1,7 +1,7 @@
 # LitchShip — LichtFeld Studio WSL2 Build Project
 
 ## Environment (auto-detected)
-- **WSL2 Ubuntu** (user: otter, host: Honeybadger)
+- **WSL2 Ubuntu 24.04 recommended** (tested on 20.04 and 24.04)
 - **GPU:** NVIDIA GeForce RTX 5090 (32607 MiB)
 - **CUDA:** 13.2 at /usr/local/cuda
 - **GCC:** gcc (Ubuntu 14.3.0-12ubuntu1~20~ppa1) 14.3.0
