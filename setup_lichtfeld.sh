@@ -135,15 +135,20 @@ if command -v cmake &>/dev/null; then
 fi
 
 if [ "$CMAKE_OK" = false ]; then
-    warn "Installing CMake 3.30+ from Kitware repository..."
+    warn "Installing CMake 3.30+ via pip (most portable method)..."
     sudo apt-get remove -y cmake 2>/dev/null || true
-    wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null \
-        | gpg --dearmor - | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-    echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ noble main' \
-        | sudo tee /etc/apt/sources.list.d/kitware.list
-    sudo apt-get update -qq
-    sudo apt-get install -y cmake
-    log "CMake $(cmake --version | head -1) installed"
+    # Remove any stale Kitware repo that won't match this distro
+    sudo rm -f /etc/apt/sources.list.d/kitware.list 2>/dev/null || true
+    pip3 install --user cmake --upgrade 2>/dev/null || pip install --user cmake --upgrade
+    # Ensure pip user bin is on PATH
+    PIP_BIN="$HOME/.local/bin"
+    if [ -d "$PIP_BIN" ] && ! echo "$PATH" | grep -q "$PIP_BIN"; then
+        export PATH="$PIP_BIN:$PATH"
+        grep -q '.local/bin' ~/.bashrc 2>/dev/null || {
+            echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
+        }
+    fi
+    log "CMake $(cmake --version | head -1) installed via pip"
 fi
 
 echo ""
