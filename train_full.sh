@@ -28,8 +28,7 @@ if [ $# -lt 1 ]; then
 fi
 
 DATA_SRC="$1"
-DATASET_NAME="$(basename "$(dirname "$DATA_SRC")")"
-[ "$DATASET_NAME" = "." ] && DATASET_NAME="$(basename "$DATA_SRC")"
+DATASET_NAME="$(basename "$DATA_SRC")"
 WORK_DIR="$HOME/data/$DATASET_NAME"
 REPO_DIR="$HOME/gaussian-splatting-cuda"
 OUTPUT_DIR="$HOME/output/${DATASET_NAME}_fullres_$(date +%Y%m%d_%H%M)"
@@ -98,13 +97,13 @@ else
     info "Found $TOTAL images to copy"
 
     COUNT=0
-    find "$IMG_SRC" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) | while IFS= read -r img; do
+    while IFS= read -r img; do
         cp "$img" "$WORK_DIR/images/"
         COUNT=$((COUNT + 1))
         if [ $((COUNT % 500)) -eq 0 ]; then
             echo -ne "\r  Copied $COUNT / $TOTAL images..."
         fi
-    done
+    done < <(find "$IMG_SRC" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \))
     echo -ne "\r"
 
     TOTAL_IMAGES=$(find "$WORK_DIR/images" -type f | wc -l)

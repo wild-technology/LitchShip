@@ -463,7 +463,7 @@ Color filtering examples:
             kept_count = sum(counts[sorted_idx[:n_keep]])
             n_removed = len(current_positions) - kept_count
             print(f"  Keeping top {n_keep} component(s) ({kept_count:,} splats), removing {n_removed:,} ({100*n_removed/len(current_positions):.1f}%)")
-            cc_keep = np.array([l in keep_labels for l in labels])
+            cc_keep = np.isin(labels, list(keep_labels))
             removed_indices = current_indices[~cc_keep]
             keep_mask[removed_indices] = False
 
@@ -486,10 +486,6 @@ Color filtering examples:
         return
 
     # --- Write output ---
-    if not args.output:
-        base = args.input.rsplit('.', 1)[0]
-        args.output = f"{base}_cleaned.ply"
-
     print(f"\nWriting {args.output}...")
     t0 = time.time()
     keep_indices = np.where(keep_mask)[0]

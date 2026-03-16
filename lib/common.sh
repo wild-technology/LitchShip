@@ -121,7 +121,7 @@ fix_extension_mismatch() {
         local actual_ext="${actual##*.}"
         warn "Extension mismatch: images.txt says .$ref_ext but files are .$actual_ext"
         warn "Fixing images.txt: replacing .$ref_ext -> .$actual_ext"
-        sed -i "s/\.${ref_ext}\$/\.${actual_ext}/g" "$images_txt"
+        sed -i "s/\\.${ref_ext}\$/\\.${actual_ext}/g" "$images_txt"
         log "Fixed extension mismatch in images.txt"
     else
         error "Cannot find image for: $sample_ref"
