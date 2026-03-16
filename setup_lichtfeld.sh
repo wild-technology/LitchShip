@@ -1,14 +1,15 @@
 #!/bin/bash
 # =============================================================================
 # LichtFeld Studio (gaussian-splatting-cuda) — WSL2 Setup Script
-# Target: RTX 5090 (Blackwell, sm_120) · Ubuntu 24.04 WSL2 (20.04+ supported)
+# Target: NVIDIA GPUs (Turing through Blackwell) · Ubuntu 24.04 WSL2 (20.04+)
 #
-# This script is designed to run with minimal intervention on a fresh WSL2
-# instance. It handles both sudo and non-sudo environments gracefully.
+# This script handles both sudo and non-sudo environments. Without sudo it
+# installs everything possible into ~/.local via pip, deb extraction, or
+# building from source.
 #
 # Usage:
-#   ./setup_lichtfeld.sh              # Full setup (needs sudo for apt)
-#   ./setup_lichtfeld.sh --no-sudo    # Skip apt steps (deps pre-installed)
+#   ./setup_lichtfeld.sh              # Full setup (uses sudo for apt)
+#   ./setup_lichtfeld.sh --no-sudo    # No sudo (CI, containers, restricted)
 # =============================================================================
 set -euo pipefail
 
@@ -24,6 +25,7 @@ error() { echo -e "${RED}[✗]${NC} $1"; }
 
 REPO_DIR="$HOME/gaussian-splatting-cuda"
 CUDA_ROOT="/usr/local/cuda"
+LOCAL_PREFIX="$HOME/.local"
 NO_SUDO=false
 
 # Parse args
@@ -40,9 +42,7 @@ if [ "$NO_SUDO" = true ]; then
 elif ! command -v sudo &>/dev/null; then
     CAN_SUDO=false
 elif ! sudo -n true 2>/dev/null; then
-    # sudo exists but needs a password — try interactively
     if [ -t 0 ]; then
-        # We have a terminal, sudo will prompt
         CAN_SUDO=true
     else
         warn "sudo requires a password but no terminal is available."
@@ -60,13 +60,104 @@ run_sudo() {
     fi
 }
 
+# Helper: extract a binary from a .deb package into ~/.local/bin
+# Usage: install_deb_bin <package-name> <binary-name> [extra-packages...]
+install_deb_bin() {
+    local pkg="$1"
+    local bin="$2"
+    shift 2
+    local extra_pkgs=("$@")
+
+    if command -v "$bin" &>/dev/null; then
+        return 0
+    fi
+    if [ -x "$LOCAL_PREFIX/bin/$bin" ]; then
+        return 0
+    fi
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    cd "$tmpdir"
+
+    local all_pkgs=("$pkg" "${extra_pkgs[@]}")
+    apt-get download "${all_pkgs[@]}" 2>/dev/null || { cd /; rm -rf "$tmpdir"; return 1; }
+
+    mkdir -p extract
+    for deb in *.deb; do
+        dpkg -x "$deb" extract 2>/dev/null || true
+    done
+
+    # Copy binaries
+    if [ -d extract/usr/bin ]; then
+        find extract/usr/bin -type f -executable -exec cp {} "$LOCAL_PREFIX/bin/" \; 2>/dev/null || true
+        # Also copy symlinks (resolve them)
+        find extract/usr/bin -type l -exec cp -L {} "$LOCAL_PREFIX/bin/" \; 2>/dev/null || true
+    fi
+    # Copy libraries
+    if [ -d extract/usr/lib/x86_64-linux-gnu ]; then
+        find extract/usr/lib/x86_64-linux-gnu -maxdepth 1 \( -name '*.so*' -o -name '*.a' \) \
+            -exec cp -a {} "$LOCAL_PREFIX/lib/" \; 2>/dev/null || true
+        # pkgconfig
+        if [ -d extract/usr/lib/x86_64-linux-gnu/pkgconfig ]; then
+            cp -a extract/usr/lib/x86_64-linux-gnu/pkgconfig/* "$LOCAL_PREFIX/lib/pkgconfig/" 2>/dev/null || true
+        fi
+    fi
+    # Copy headers
+    if [ -d extract/usr/include ]; then
+        cp -a extract/usr/include/* "$LOCAL_PREFIX/include/" 2>/dev/null || true
+    fi
+    # Copy aclocal macros
+    if [ -d extract/usr/share/aclocal ]; then
+        cp -a extract/usr/share/aclocal/* "$LOCAL_PREFIX/share/aclocal/" 2>/dev/null || true
+    fi
+
+    cd /
+    rm -rf "$tmpdir"
+}
+
+# Helper: build a GNU tool from source
+# Usage: build_gnu_tool <name> <version> <url-suffix>
+build_gnu_tool() {
+    local name="$1"
+    local version="$2"
+    local tarball="$3"
+    local url="https://ftp.gnu.org/gnu/$name/$tarball"
+
+    warn "Building $name $version from source..."
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    cd "$tmpdir"
+    wget -q "$url"
+    tar xf "$tarball"
+    cd "${tarball%.tar.*}"
+    ./configure --prefix="$LOCAL_PREFIX" --quiet
+    make -j"$(nproc)" --quiet
+    make install --quiet
+    cd /
+    rm -rf "$tmpdir"
+    log "$name $version installed to $LOCAL_PREFIX"
+}
+
+# ─── Setup ~/.local directories ─────────────────────────────────────────────
+
+mkdir -p "$LOCAL_PREFIX/bin" "$LOCAL_PREFIX/lib" "$LOCAL_PREFIX/lib/pkgconfig" \
+         "$LOCAL_PREFIX/include" "$LOCAL_PREFIX/share/aclocal" \
+         "$LOCAL_PREFIX/libexec"
+
+# Ensure ~/.local/bin is on PATH for the rest of this script
+export PATH="$LOCAL_PREFIX/bin:$CUDA_ROOT/bin:$PATH"
+export LD_LIBRARY_PATH="$LOCAL_PREFIX/lib:$CUDA_ROOT/lib64:${LD_LIBRARY_PATH:-}"
+export LIBRARY_PATH="$LOCAL_PREFIX/lib:${LIBRARY_PATH:-}"
+export CPATH="$LOCAL_PREFIX/include:${CPATH:-}"
+export PKG_CONFIG_PATH="$LOCAL_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+export ACLOCAL_PATH="$LOCAL_PREFIX/share/aclocal:${ACLOCAL_PATH:-}"
+
 # ─── Preflight Checks ───────────────────────────────────────────────────────
 
 echo ""
 echo "============================================"
 echo "  LichtFeld Studio — WSL2 Setup"
-echo "  Target GPU: RTX 5090 (Blackwell sm_120)"
-echo "  sudo: $([ "$CAN_SUDO" = true ] && echo "available" || echo "unavailable")"
+echo "  sudo: $([ "$CAN_SUDO" = true ] && echo "available" || echo "unavailable (--no-sudo)")"
 echo "============================================"
 echo ""
 
@@ -134,9 +225,7 @@ else
     fi
 fi
 
-# Ensure CUDA is on PATH for this session and future ones
-export PATH="$CUDA_ROOT/bin:$HOME/.local/bin:$PATH"
-export LD_LIBRARY_PATH="$CUDA_ROOT/lib64:${LD_LIBRARY_PATH:-}"
+# Persist CUDA PATH for future sessions
 grep -q 'cuda' ~/.bashrc 2>/dev/null || {
     echo '' >> ~/.bashrc
     echo '# CUDA Toolkit' >> ~/.bashrc
@@ -146,7 +235,7 @@ grep -q 'cuda' ~/.bashrc 2>/dev/null || {
 
 echo ""
 
-# ─── Step 2: Build Dependencies (apt) ───────────────────────────────────────
+# ─── Step 2: Build Dependencies ─────────────────────────────────────────────
 
 echo "=== [2/8] Build Dependencies ==="
 
@@ -157,6 +246,7 @@ APT_PACKAGES=(
     libssl-dev libx11-dev libxrandr-dev libxi-dev libxtst-dev
     libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev
     libwayland-dev libxkbcommon-dev libegl1-mesa-dev
+    libxext-dev libxau-dev libxdmcp-dev libxcb1-dev x11proto-dev
     autoconf automake autoconf-archive libtool nasm yasm
 )
 
@@ -165,55 +255,151 @@ if [ "$CAN_SUDO" = true ]; then
     sudo apt-get install -y "${APT_PACKAGES[@]}" 2>&1 | tail -1
     log "Base dependencies installed via apt"
 else
-    warn "Skipping apt install (no sudo). Checking if key tools exist..."
+    warn "No sudo available. Installing dependencies locally..."
+
+    # ── Essential CLI tools (from deb) ──
+    for tool in zip unzip nasm yasm; do
+        if ! command -v "$tool" &>/dev/null && [ ! -x "$LOCAL_PREFIX/bin/$tool" ]; then
+            install_deb_bin "$tool" "$tool"
+            log "Installed $tool locally"
+        fi
+    done
+
+    # ── pkg-config (needs pkgconf-bin + libpkgconf3) ──
+    if ! command -v pkg-config &>/dev/null && [ ! -x "$LOCAL_PREFIX/bin/pkg-config" ]; then
+        install_deb_bin pkgconf-bin pkgconf libpkgconf3
+        ln -sf pkgconf "$LOCAL_PREFIX/bin/pkg-config" 2>/dev/null || true
+        log "Installed pkg-config locally"
+    fi
+
+    # ── cmake + ninja (via pip) ──
+    if ! command -v cmake &>/dev/null; then
+        warn "Installing cmake + ninja via pip..."
+        pip3 install --user cmake ninja --upgrade 2>/dev/null \
+            || pip install --user cmake ninja --upgrade
+        log "cmake + ninja installed via pip"
+    fi
+
+    # ── autoconf-archive macros (from deb) ──
+    if [ "$(ls -A "$LOCAL_PREFIX/share/aclocal" 2>/dev/null | wc -l)" -lt 100 ]; then
+        install_deb_bin autoconf-archive false
+        log "autoconf-archive macros installed locally"
+    fi
+
+    # ── pkg.m4 (from pkgconf deb, needed for libb2 build) ──
+    if [ ! -f "$LOCAL_PREFIX/share/aclocal/pkg.m4" ]; then
+        install_deb_bin pkgconf false
+        log "pkg.m4 macro installed locally"
+    fi
+
+    # ── OpenGL dev libraries (from debs) ──
+    if [ ! -f "$LOCAL_PREFIX/lib/libOpenGL.so" ]; then
+        warn "Installing OpenGL development libraries locally..."
+        install_deb_bin libgl-dev false \
+            libglx-dev libegl-dev libopengl-dev libglvnd-dev \
+            libgl1-mesa-dev mesa-common-dev libglu1-mesa-dev \
+            libglvnd0 libglx0 libgl1 libegl1 libopengl0 \
+            libglx-mesa0 libglu1-mesa
+        log "OpenGL dev libraries installed locally"
+    fi
+
+    # ── X11 dev libraries (from debs) ──
+    if [ ! -f "$LOCAL_PREFIX/include/X11/Xatom.h" ]; then
+        warn "Installing X11 development libraries locally..."
+        install_deb_bin libx11-dev false \
+            libx11-6 libxcb1-dev libxau-dev libxdmcp-dev \
+            x11proto-dev libxext-dev libxrandr-dev libxi-dev \
+            libxcursor-dev libxinerama-dev
+        log "X11 dev libraries installed locally"
+    fi
+
+    # Verify key tools now exist
     MISSING=()
-    for cmd in gcc g++ cmake ninja git python3 curl wget; do
+    for cmd in gcc g++ cmake ninja git python3 curl wget zip unzip pkg-config; do
         command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
     done
     if [ ${#MISSING[@]} -gt 0 ]; then
         error "Missing required tools: ${MISSING[*]}"
-        error "Run with sudo or install them manually."
+        error "Install them manually or run with sudo."
         exit 1
     fi
-    log "Key build tools found"
+    log "Key build tools verified"
+fi
 
-    # Install autoconf-archive locally if missing (needed by vcpkg libb2)
-    if ! dpkg -l autoconf-archive &>/dev/null 2>&1; then
-        if [ ! -d "$HOME/.local/share/aclocal" ] || [ "$(ls -A "$HOME/.local/share/aclocal" 2>/dev/null | wc -l)" -lt 100 ]; then
-            warn "Installing autoconf-archive macros locally..."
-            mkdir -p "$HOME/.local/share/aclocal"
-            cd /tmp
-            apt-get download autoconf-archive 2>/dev/null || true
-            if ls autoconf-archive*.deb 1>/dev/null 2>&1; then
-                dpkg -x autoconf-archive*.deb autoconf-archive-tmp
-                cp autoconf-archive-tmp/usr/share/aclocal/*.m4 "$HOME/.local/share/aclocal/" 2>/dev/null || true
-                rm -rf autoconf-archive-tmp autoconf-archive*.deb
-                log "autoconf-archive macros installed locally"
+# ── GCC 14 (required for C++23 <print> header) ──
+GCC14_OK=false
+if gcc --version 2>/dev/null | grep -q ' 1[4-9]\.\| [2-9][0-9]\.'; then
+    GCC14_OK=true
+    log "GCC 14+ already installed: $(gcc --version | head -1)"
+fi
+
+if [ "$GCC14_OK" = false ]; then
+    if [ "$CAN_SUDO" = true ]; then
+        warn "Installing GCC 14 (required for C++23)..."
+        sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+        sudo apt-get update -qq
+        sudo apt-get install -y gcc-14 g++-14
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 14
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 14
+        log "GCC 14 installed and set as default"
+    else
+        # Install GCC 14 locally from Ubuntu debs
+        if [ ! -x "$LOCAL_PREFIX/bin/gcc-14" ]; then
+            warn "Installing GCC 14 locally from packages..."
+            local_tmpdir=$(mktemp -d)
+            cd "$local_tmpdir"
+            apt-get download \
+                gcc-14-x86-64-linux-gnu g++-14-x86-64-linux-gnu cpp-14-x86-64-linux-gnu \
+                libgcc-14-dev libstdc++-14-dev 2>/dev/null
+
+            mkdir -p extract
+            for deb in *.deb; do dpkg -x "$deb" extract 2>/dev/null || true; done
+
+            # Binaries
+            cp extract/usr/bin/x86_64-linux-gnu-gcc-14 "$LOCAL_PREFIX/bin/gcc-14"
+            cp extract/usr/bin/x86_64-linux-gnu-g++-14 "$LOCAL_PREFIX/bin/g++-14"
+            ln -sf gcc-14 "$LOCAL_PREFIX/bin/gcc"
+            ln -sf g++-14 "$LOCAL_PREFIX/bin/g++"
+            ln -sf gcc-14 "$LOCAL_PREFIX/bin/cc"
+            ln -sf g++-14 "$LOCAL_PREFIX/bin/c++"
+
+            # Compiler internals (cc1, cc1plus, etc.)
+            mkdir -p "$LOCAL_PREFIX/libexec/gcc/x86_64-linux-gnu/14"
+            cp -a extract/usr/libexec/gcc/x86_64-linux-gnu/14/* \
+                "$LOCAL_PREFIX/libexec/gcc/x86_64-linux-gnu/14/" 2>/dev/null || true
+
+            # Libraries (libgcc, libstdc++)
+            mkdir -p "$LOCAL_PREFIX/lib/gcc/x86_64-linux-gnu"
+            cp -a extract/usr/lib/gcc/x86_64-linux-gnu/14 \
+                "$LOCAL_PREFIX/lib/gcc/x86_64-linux-gnu/" 2>/dev/null || true
+
+            # C++ headers
+            mkdir -p "$LOCAL_PREFIX/include/c++"
+            cp -a extract/usr/include/c++/14 "$LOCAL_PREFIX/include/c++/" 2>/dev/null || true
+
+            # Target-specific headers (bits/c++config.h)
+            mkdir -p "$LOCAL_PREFIX/include/x86_64-linux-gnu/c++"
+            cp -a extract/usr/include/x86_64-linux-gnu/c++/14 \
+                "$LOCAL_PREFIX/include/x86_64-linux-gnu/c++/" 2>/dev/null || true
+
+            cd /
+            rm -rf "$local_tmpdir"
+
+            # Fix broken libgomp.so symlink (common with deb extraction)
+            if [ -L "$LOCAL_PREFIX/lib/gcc/x86_64-linux-gnu/14/libgomp.so" ] && \
+               [ ! -e "$LOCAL_PREFIX/lib/gcc/x86_64-linux-gnu/14/libgomp.so" ]; then
+                SYSTEM_GOMP=$(find /usr/lib -name 'libgomp.so.1' 2>/dev/null | head -1)
+                if [ -n "$SYSTEM_GOMP" ]; then
+                    ln -sf "$SYSTEM_GOMP" "$LOCAL_PREFIX/lib/gcc/x86_64-linux-gnu/14/libgomp.so"
+                fi
             fi
-            cd -
+
+            log "GCC 14 installed locally"
         fi
     fi
 fi
 
-export ACLOCAL_PATH="$HOME/.local/share/aclocal:${ACLOCAL_PATH:-}"
-
-# GCC 14+ required for C++23
-if gcc --version 2>/dev/null | grep -q ' 1[4-9]\.\| [2-9][0-9]\.'; then
-    log "GCC 14+ already installed: $(gcc --version | head -1)"
-elif [ "$CAN_SUDO" = true ]; then
-    warn "Installing GCC 14 (required for C++23)..."
-    sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-    sudo apt-get update -qq
-    sudo apt-get install -y gcc-14 g++-14
-    sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 14
-    sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 14
-    log "GCC 14 installed and set as default"
-else
-    error "GCC 14+ required but not found. Install with sudo."
-    exit 1
-fi
-
-# CMake 3.30+ required
+# ── CMake 3.30+ ──
 CMAKE_OK=false
 if command -v cmake &>/dev/null; then
     CMAKE_VER=$(cmake --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "0.0.0")
@@ -229,17 +415,18 @@ if [ "$CMAKE_OK" = false ]; then
     warn "Installing CMake 3.30+ via pip..."
     run_sudo apt-get remove -y cmake 2>/dev/null || true
     pip3 install --user cmake --upgrade 2>/dev/null || pip install --user cmake --upgrade
-    PIP_BIN="$HOME/.local/bin"
-    if [ -d "$PIP_BIN" ] && ! echo "$PATH" | grep -q "$PIP_BIN"; then
-        export PATH="$PIP_BIN:$PATH"
-        grep -q '.local/bin' ~/.bashrc 2>/dev/null || {
-            echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
-        }
-    fi
     log "CMake $(cmake --version | head -1) installed via pip"
 fi
 
-# Autoconf 2.71+ required for vcpkg python3 build
+# ── Autotools (m4, autoconf, automake, libtool) ──
+# These are needed by vcpkg to build libb2, libffi, python3, etc.
+
+if ! command -v m4 &>/dev/null; then
+    build_gnu_tool m4 1.4.19 "m4-1.4.19.tar.xz"
+else
+    log "m4 found: $(m4 --version | head -1)"
+fi
+
 AUTOCONF_OK=false
 if command -v autoconf &>/dev/null; then
     AC_VER=$(autoconf --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+' || echo "0.0")
@@ -250,25 +437,28 @@ if command -v autoconf &>/dev/null; then
         log "Autoconf $AC_VER meets requirement (2.71+)"
     fi
 fi
-
 if [ "$AUTOCONF_OK" = false ]; then
-    if [ -x "$HOME/.local/bin/autoconf" ]; then
-        export PATH="$HOME/.local/bin:$PATH"
-        log "Using locally installed autoconf: $($HOME/.local/bin/autoconf --version | head -1)"
-    else
-        warn "Building autoconf 2.72 from source (needed for vcpkg python3)..."
-        cd /tmp
-        wget -q https://ftp.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz
-        tar xf autoconf-2.72.tar.xz
-        cd autoconf-2.72
-        ./configure --prefix="$HOME/.local" --quiet
-        make -j"$(nproc)" --quiet
-        make install --quiet
-        cd /tmp && rm -rf autoconf-2.72 autoconf-2.72.tar.xz
-        export PATH="$HOME/.local/bin:$PATH"
-        log "Autoconf 2.72 installed locally"
-    fi
+    build_gnu_tool autoconf 2.72 "autoconf-2.72.tar.xz"
 fi
+
+if ! command -v automake &>/dev/null; then
+    build_gnu_tool automake 1.17 "automake-1.17.tar.xz"
+else
+    log "automake found: $(automake --version | head -1)"
+fi
+
+if ! command -v libtool &>/dev/null; then
+    build_gnu_tool libtool 2.5.4 "libtool-2.5.4.tar.xz"
+else
+    log "libtool found: $(libtool --version | head -1)"
+fi
+
+# Persist local paths for future sessions
+grep -q '.local/bin' ~/.bashrc 2>/dev/null || {
+    echo '' >> ~/.bashrc
+    echo '# Local tools' >> ~/.bashrc
+    echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
+}
 
 echo ""
 
@@ -394,6 +584,23 @@ if [ -d "$REPO_DIR/overlay-ports" ]; then
     OVERLAY_ARG="-DVCPKG_OVERLAY_PORTS=$REPO_DIR/overlay-ports"
 fi
 
+# OpenGL hints for non-standard locations (e.g. ~/.local)
+OPENGL_ARGS=""
+if [ -f "$LOCAL_PREFIX/lib/libOpenGL.so" ]; then
+    OPENGL_ARGS="-DOPENGL_opengl_LIBRARY=$LOCAL_PREFIX/lib/libOpenGL.so"
+    OPENGL_ARGS="$OPENGL_ARGS -DOPENGL_glx_LIBRARY=$LOCAL_PREFIX/lib/libGLX.so"
+    OPENGL_ARGS="$OPENGL_ARGS -DOPENGL_INCLUDE_DIR=$LOCAL_PREFIX/include"
+    OPENGL_ARGS="$OPENGL_ARGS -DOPENGL_egl_LIBRARY=$LOCAL_PREFIX/lib/libEGL.so"
+    log "Using OpenGL from $LOCAL_PREFIX/lib"
+fi
+
+# Use locally-installed GCC 14 if available
+CC_ARGS=""
+if [ -x "$LOCAL_PREFIX/bin/gcc-14" ]; then
+    CC_ARGS="-DCMAKE_C_COMPILER=$LOCAL_PREFIX/bin/gcc-14 -DCMAKE_CXX_COMPILER=$LOCAL_PREFIX/bin/g++-14"
+    log "Using GCC 14 from $LOCAL_PREFIX/bin"
+fi
+
 cmake .. \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
@@ -401,7 +608,7 @@ cmake .. \
     -DCUDAToolkit_ROOT="$CUDA_ROOT" \
     -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
     -DCMAKE_PREFIX_PATH="$REPO_DIR/external/libtorch" \
-    $OVERLAY_ARG
+    $OVERLAY_ARG $OPENGL_ARGS $CC_ARGS
 
 log "CMake configured"
 
@@ -438,6 +645,7 @@ echo ""
 echo "=== [8/8] Verification ==="
 
 # Quick smoke test — just check it starts and prints version
+export LD_LIBRARY_PATH="$REPO_DIR/build:$CUDA_ROOT/lib64:$LOCAL_PREFIX/lib:${LD_LIBRARY_PATH:-}"
 if "$BINARY" --version 2>&1 | head -1; then
     log "Binary runs successfully"
 else

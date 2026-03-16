@@ -1,0 +1,5 @@
+# Windows NTFS alternate data stream artifacts
+*:Zone.Identifier
+
+# Claude Code local settings
+.claude/

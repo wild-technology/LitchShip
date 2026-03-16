@@ -1,7 +1,7 @@
 # LichtFeld Studio (gaussian-splatting-cuda) — WSL2 Build & Run Guide
 
-> **System:** RTX 5090 (Blackwell, sm_120) · Threadripper · 196 GB RAM · WSL2 Ubuntu 24.04
-> **Data location:** `C:\Users\WildTech\Desktop\H2103d_test_colmap_workflow` (RealityScan 2.1 export)
+> **Tested on:** RTX 5090 (Blackwell, sm_120) · WSL2 Ubuntu 24.04
+> **Also works on:** RTX 20/30/40 series · Ubuntu 20.04+ · native Linux
 
 ---
 
@@ -124,8 +124,13 @@ cd /usr/local/cuda/extras/demo_suite/
 
 ## 5. Install Build Dependencies
 
-LichtFeld Studio requires **C++23** (needs GCC 14+), **CMake 3.30+**, vcpkg,
-and LibTorch. Ubuntu 24.04 ships GCC 13 and CMake 3.28, so both need upgrading.
+LichtFeld Studio requires **C++23** (needs **GCC 14+** for the `<print>` header),
+**CMake 3.30+**, vcpkg, and LibTorch. Ubuntu 24.04 ships GCC 13 and CMake 3.28,
+so both need upgrading.
+
+> **Note:** GCC 13 will NOT work — the codebase uses `#include <print>` which
+> was added in GCC 14. If you see `fatal error: print: No such file or directory`,
+> you need GCC 14.
 
 ```bash
 # Essential build tools
@@ -144,20 +149,28 @@ sudo apt-get install -y \
     python3-pip \
     software-properties-common
 
-# Libraries needed by vcpkg dependencies
+# Libraries needed by vcpkg dependencies and the build
 sudo apt-get install -y \
     libssl-dev \
     libx11-dev \
     libxrandr-dev \
     libxi-dev \
+    libxtst-dev \
     libgl1-mesa-dev \
     libglu1-mesa-dev \
     libxcursor-dev \
     libxinerama-dev \
     libwayland-dev \
     libxkbcommon-dev \
+    libegl1-mesa-dev \
+    libxext-dev \
+    libxau-dev \
+    libxdmcp-dev \
+    libxcb1-dev \
+    x11proto-dev \
     autoconf \
     automake \
+    autoconf-archive \
     libtool \
     nasm \
     yasm
@@ -203,6 +216,28 @@ sudo apt-get install -y cmake
 cmake --version
 # → Should show 3.30+
 ```
+
+### Without sudo (CI, Containers, Restricted Environments)
+
+If you don't have sudo access, use the automated script:
+
+```bash
+./setup_lichtfeld.sh --no-sudo
+```
+
+This installs everything to `~/.local` automatically:
+- **cmake + ninja** via pip
+- **GCC 14** extracted from Ubuntu `.deb` packages (including cc1plus and C++23 headers)
+- **OpenGL/X11 dev libraries** extracted from `.deb` packages
+- **zip, unzip, pkg-config, nasm, yasm** extracted from `.deb` packages
+- **m4, autoconf, automake, libtool** built from source
+- **autoconf-archive + pkg.m4** macros from `.deb` packages
+
+Prerequisites for `--no-sudo` mode:
+- Any GCC (for bootstrapping autotools builds)
+- `git`, `curl`, `wget`, `python3`, `pip3`
+- CUDA toolkit pre-installed
+- `apt-get download` must work (read-only apt access)
 
 ### Install vcpkg
 
@@ -553,6 +588,46 @@ sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 14
 Do NOT install LibTorch via vcpkg. Download it manually into `external/`
 as described in the build section. See
 [vcpkg issue #36844](https://github.com/microsoft/vcpkg/issues/36844).
+
+### `fatal error: print: No such file or directory`
+
+You're using GCC 13 or older. GCC 14 is required for C++23's `<print>` header:
+```bash
+gcc --version   # Must show 14.x+
+```
+
+### vcpkg libb2 fails with `pkgconfigdir is undefined`
+
+The `pkg.m4` autoconf macro is missing. Install `autoconf-archive` or the
+`pkgconf` package which provides `pkg.m4`:
+```bash
+sudo apt-get install autoconf-archive
+# Or for --no-sudo, the setup script handles this automatically
+```
+
+### Linker error: `libgomp.a: relocation R_X86_64_TPOFF32 ... cannot be used when making a shared object`
+
+When GCC 14 is installed from debs without sudo, `libgomp.so` is a broken
+symlink. Fix it:
+```bash
+ln -sf /usr/lib/x86_64-linux-gnu/libgomp.so.1 \
+    ~/.local/lib/gcc/x86_64-linux-gnu/14/libgomp.so
+```
+
+### `Could NOT find OpenGL` during cmake configure
+
+OpenGL dev libraries are missing. Install them:
+```bash
+sudo apt-get install libgl1-mesa-dev libegl1-mesa-dev libglvnd-dev
+# Or for --no-sudo, the setup script extracts these from debs automatically
+```
+
+### `fatal error: X11/Xatom.h: No such file or directory`
+
+X11 development headers are missing:
+```bash
+sudo apt-get install libx11-dev x11proto-dev
+```
 
 ---
 

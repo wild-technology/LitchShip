@@ -51,8 +51,8 @@ fi
 
 # Check CUDA
 if [ -x "$CUDA_ROOT/bin/nvcc" ]; then
-    export PATH="$CUDA_ROOT/bin:$PATH"
-    export LD_LIBRARY_PATH="$CUDA_ROOT/lib64:${LD_LIBRARY_PATH:-}"
+    export PATH="$HOME/.local/bin:$CUDA_ROOT/bin:$PATH"
+    export LD_LIBRARY_PATH="$REPO_DIR/build:$CUDA_ROOT/lib64:$HOME/.local/lib:${LD_LIBRARY_PATH:-}"
     log "CUDA: $($CUDA_ROOT/bin/nvcc --version | grep release | sed 's/.*release //' | sed 's/,.*//')"
 else
     error "CUDA not found at $CUDA_ROOT"
