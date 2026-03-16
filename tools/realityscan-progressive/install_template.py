@@ -7,11 +7,12 @@ it in Report.xml so it appears in the export dialog.
 
 Usage (run on Windows where RealityScan is installed):
     python install_template.py
-    python install_template.py --rs-path "D:\\Epic Games\\RealityScan"
+    python install_template.py --rs-path "C:\\Program Files\\Epic Games\\RealityScan_2.1"
     python install_template.py --dry-run
 """
 
 import argparse
+import glob
 import os
 import shutil
 import sys
@@ -26,19 +27,47 @@ FORMAT_ENTRY = f'''  <format id="{TEMPLATE_GUID}" mask="*.json" desc="{TEMPLATE_
     <body>$Include("Reports\\{TEMPLATE_FILENAME}")</body>
   </format>'''
 
+SEARCH_ROOTS = [
+    os.environ.get("ProgramFiles", r"C:\Program Files"),
+    os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+    r"D:\Program Files",
+]
+
+# Exact paths to try first (fastest)
 DEFAULT_PATHS = [
-    os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Epic Games", "RealityScan"),
-    os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Epic Games", "RealityScan"),
+    os.path.join(root, "Epic Games", "RealityScan")
+    for root in SEARCH_ROOTS
+] + [
     r"C:\Program Files\Capturing Reality\RealityCapture",
-    r"D:\Program Files\Epic Games\RealityScan",
+]
+
+# Glob patterns for versioned installs (e.g. RealityScan_2.1, RealityCapture_1.4)
+GLOB_PATTERNS = [
+    os.path.join(root, "Epic Games", "RealityScan*")
+    for root in SEARCH_ROOTS
+] + [
+    os.path.join(root, "Capturing Reality", "RealityCapture*")
+    for root in SEARCH_ROOTS
 ]
 
 
 def find_rs_install() -> str:
-    """Auto-detect RealityScan installation directory."""
+    """Auto-detect RealityScan installation directory.
+
+    Checks exact paths first, then expands glob patterns to catch versioned
+    installs like RealityScan_2.1 or RealityCapture_1.4.
+    """
+    # Exact matches first
     for path in DEFAULT_PATHS:
         if os.path.isdir(path) and os.path.isfile(os.path.join(path, "Report.xml")):
             return path
+
+    # Glob for versioned directories
+    for pattern in GLOB_PATTERNS:
+        for path in sorted(glob.glob(pattern), reverse=True):  # newest version first
+            if os.path.isdir(path) and os.path.isfile(os.path.join(path, "Report.xml")):
+                return path
+
     return ""
 
 
@@ -107,11 +136,14 @@ def main():
     # Find RealityScan
     rs_path = args.rs_path or find_rs_install()
     if not rs_path or not os.path.isdir(rs_path):
+        searched = DEFAULT_PATHS + GLOB_PATTERNS
         print("ERROR: RealityScan installation not found.", file=sys.stderr)
         print("  Searched:", file=sys.stderr)
-        for p in DEFAULT_PATHS:
+        for p in searched:
             print(f"    {p}", file=sys.stderr)
-        print(f"\n  Use --rs-path to specify the installation directory.", file=sys.stderr)
+        print(f'\n  Use --rs-path to specify the installation directory.', file=sys.stderr)
+        print(f'  NOTE: Quote paths with spaces:', file=sys.stderr)
+        print(f'    python install_template.py --rs-path "C:\\Program Files\\Epic Games\\RealityScan_2.1"', file=sys.stderr)
         sys.exit(1)
 
     print(f"RealityScan found at: {rs_path}")
