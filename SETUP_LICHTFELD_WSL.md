@@ -47,7 +47,7 @@ wsl --set-default-version 2
 
 With 196 GB system RAM and a large GPU workload, tune WSL2 memory limits.
 
-Create/edit `C:\Users\WildTech\.wslconfig`:
+Create/edit `C:\Users\<YourUsername>\.wslconfig`:
 
 ```ini
 [wsl2]
@@ -66,7 +66,7 @@ wsl --shutdown
 
 ## 3. CUDA Toolkit Installation (Inside WSL2)
 
-Open your WSL2 terminal (`otter@Honeybadger`).
+Open your WSL2 terminal (`your-user@your-host`).
 
 > **Critical:** Install **only** `cuda-toolkit`, never the `cuda` or
 > `cuda-drivers` meta-packages — those try to install Linux GPU drivers and
@@ -363,11 +363,11 @@ native filesystem:
 
 ```bash
 # Create a working directory
-mkdir -p ~/data/H2103d_test_colmap_workflow
+mkdir -p ~/data/your_dataset
 
 # Copy your images and COLMAP text files
-cp -r "/mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow/images" \
-      ~/data/H2103d_test_colmap_workflow/images
+cp -r "/path/to/your/colmap/dataset/images" \
+      ~/data/your_dataset/images
 ```
 
 ### Expected COLMAP Text Data Structure
@@ -376,7 +376,7 @@ LichtFeld Studio expects a standard COLMAP reconstruction layout. Since you
 have COLMAP text files, organize them like this:
 
 ```
-~/data/H2103d_test_colmap_workflow/
+~/data/your_dataset/
 ├── images/                    # Your photographs
 │   ├── IMG_0001.jpg
 │   ├── IMG_0002.jpg
@@ -391,16 +391,16 @@ have COLMAP text files, organize them like this:
 If your COLMAP text files are loose in the data directory, move them:
 
 ```bash
-mkdir -p ~/data/H2103d_test_colmap_workflow/sparse/0
+mkdir -p ~/data/your_dataset/sparse/0
 
 # Move/copy your COLMAP text files into the sparse directory
 # Adjust these paths based on where your .txt files actually are
-cp /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow/cameras.txt \
-   ~/data/H2103d_test_colmap_workflow/sparse/0/
-cp /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow/images.txt \
-   ~/data/H2103d_test_colmap_workflow/sparse/0/
-cp /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow/points3D.txt \
-   ~/data/H2103d_test_colmap_workflow/sparse/0/
+cp /path/to/your/colmap/dataset/cameras.txt \
+   ~/data/your_dataset/sparse/0/
+cp /path/to/your/colmap/dataset/images.txt \
+   ~/data/your_dataset/sparse/0/
+cp /path/to/your/colmap/dataset/points3D.txt \
+   ~/data/your_dataset/sparse/0/
 ```
 
 ### COLMAP Text File Format Reference
@@ -444,11 +444,15 @@ cd ~/gaussian-splatting-cuda
 
 # Basic training run
 ./build/bin/lichtfeld-studio \
-    -d ~/data/H2103d_test_colmap_workflow \
-    -o ~/output/H2103d_test_colmap_workflow \
-    --strategy mcmc \
+    -d ~/data/your_dataset \
+    -o ~/output/your_dataset \
+    --strategy adc \
     --max-cap 500000 \
-    -i 30000
+    -i 30000 \
+    --min-opacity 0.1 \
+    --enable-sparsity \
+    --prune-ratio 0.6 \
+    --enable-mip
 ```
 
 > **Note:** The exact binary path may vary — check `build/bin/` or just
@@ -462,7 +466,7 @@ cd ~/gaussian-splatting-cuda
 | `-o, --output-path PATH` | Output directory for results | `./output` |
 | `-i, --iter NUM` | Number of training iterations | 30000 |
 | `-r, --resize_factor NUM` | Image downscale factor (1=full res) | 1 |
-| `--strategy [mcmc\|default]` | Optimization strategy | mcmc |
+| `--strategy [adc\|mcmc\|default]` | Optimization strategy | adc |
 | `--max-cap NUM` | Maximum number of Gaussians (MCMC) | 1000000 |
 
 > Run `--help` for the full list — additional parameters may be available for
@@ -480,8 +484,12 @@ ls ~/gaussian-splatting-cuda/parameter/
 
 ### Strategy Notes
 
-- **`mcmc`** (recommended): Monte Carlo Markov Chain — better convergence,
-  controls Gaussian count via `--max-cap`
+- **`adc`** (recommended): Adaptive Density Control — built-in scale pruning,
+  no bloom artifacts, handles `--min-opacity` correctly. Use with
+  `--enable-sparsity --prune-ratio 0.6 --enable-mip`.
+- **`mcmc`**: Monte Carlo Markov Chain — good convergence, but has a **known
+  bug**: non-default `--min-opacity` causes a 17 PB memory allocation crash.
+  Do not use MCMC with `--min-opacity`.
 - **`default`**: Traditional densification via duplication and splitting
 
 ### Performance Tips for Your Hardware
@@ -539,7 +547,7 @@ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 You're probably reading from `/mnt/c/`. Copy data to `~/`:
 ```bash
-cp -r /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow ~/data/
+cp -r /path/to/your/colmap/dataset ~/data/
 ```
 
 ### CMake can't find CUDA
@@ -722,8 +730,8 @@ echo "=== BUILD COMPLETE ==="
 echo "Binary: find ~/gaussian-splatting-cuda/build/ -type f -executable"
 echo ""
 echo "Next steps:"
-echo "  1. Copy your data:  cp -r /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow ~/data/"
-echo "  2. Run training:    ./build/bin/lichtfeld-studio -d ~/data/H2103d_test_colmap_workflow -o ~/output/H2103d --strategy mcmc"
+echo "  1. Copy your data:  cp -r /path/to/your/colmap/dataset ~/data/"
+echo "  2. Run training:    ./build/bin/lichtfeld-studio -d ~/data/your_dataset -o ~/output/your_scene --strategy adc --enable-mip"
 ```
 
 Save this as `~/setup_lichtfeld.sh`, then run:

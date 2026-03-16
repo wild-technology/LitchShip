@@ -15,17 +15,14 @@ cd LitchShip
 chmod +x setup_lichtfeld.sh
 ./setup_lichtfeld.sh
 
-# Train on your COLMAP dataset
-~/gaussian-splatting-cuda/build/LichtFeld-Studio \
-    -d /path/to/your/dataset \
-    -o ~/output/my_scene \
-    --strategy mcmc \
-    --max-cap 1000000 \
-    -i 30000 \
-    -r 2 \
-    --min-opacity 0.05 \
-    --enable-mip \
-    --headless
+# Test with a small subset (30 images, ~20 seconds)
+./run_test_training.sh /path/to/your/dataset
+
+# Full production training
+./train_full.sh /path/to/your/dataset
+
+# Benchmark multiple configurations
+./benchmark.sh /path/to/your/dataset
 ```
 
 ## What It Does
@@ -55,6 +52,18 @@ The script is idempotent -- re-running skips completed steps.
 - **WSL2** with Ubuntu 24.04 recommended (20.04+ supported), or native Linux
 - **NVIDIA driver 570+** on Windows (WSL2) or Linux
 - **CUDA Toolkit 12.8+** (auto-installed by setup if sudo available)
+
+## Strategy Comparison: ADC vs MCMC
+
+| | ADC (Recommended) | MCMC |
+|---|---|---|
+| Quality | Higher — built-in scale pruning removes bloom/floaters | Good, but can produce bloom artifacts |
+| Opacity control | `--min-opacity` works correctly | **BUG:** non-default `--min-opacity` causes 17 PB memory crash |
+| Best flags | `--min-opacity 0.1 --enable-sparsity --prune-ratio 0.6 --enable-mip` | `--enable-mip` (don't use `--min-opacity`) |
+| Speed | Comparable | Comparable |
+| When to use | Always, for production | Comparison benchmarks only |
+
+**Recommendation:** Always use `--strategy adc`. MCMC has a memory allocation bug when `--min-opacity` is set to a non-default value.
 
 ## Running With sudo
 
@@ -122,60 +131,51 @@ Image filenames in `images.txt` must match actual files in `images/`. If images 
 
 | Flag | Description | Recommended |
 |------|-------------|-------------|
-| `--strategy mcmc` | Optimization strategy | `mcmc` for most scenes |
-| `--max-cap N` | Max gaussian count | `500000`-`1000000` |
+| `--strategy adc` | Optimization strategy | `adc` (always) |
+| `--max-cap N` | Max gaussian count | `500000`-`2000000` |
 | `-i N` | Iterations | `30000` for production |
 | `-r N` | Resolution downscale | `2` (fast) or `1` (full) |
-| `--min-opacity F` | Prune transparent splats | `0.05` (reduces haze) |
+| `--min-opacity F` | Prune transparent splats | `0.1` (ADC only) |
+| `--enable-sparsity` | Enable sparsity loss | Yes (with ADC) |
+| `--prune-ratio F` | Scale pruning aggressiveness | `0.6` (with ADC) |
 | `--enable-mip` | Anti-aliasing filter | Yes (reduces sparkle) |
 | `--headless` | No GUI window | Required for WSL2/servers |
-| `--bilateral-grid` | Bilateral filtering | Try if haze persists |
 
-### Performance Reference (RTX 5090, 32 GB VRAM)
+### Performance Reference (RTX 5090, 32 GB VRAM, ADC strategy)
 
 | Dataset | Images | Resolution | Gaussians | Time | Iter/s |
 |---------|--------|-----------|-----------|------|--------|
-| Small test | 30 | half | 200K | 19s | 161 |
-| Medium | 6,821 | half | 500K | 8 min | 63 |
-| Medium | 6,821 | full | 500K | 19 min | 26 |
-| Large | 23,630 | half | 1M | 8 min | 60 |
-
-## Reducing Specular Haze
-
-Gaussian splatting can produce a halo/haze around objects, especially on reflective surfaces. To minimize it:
-
-**At training time (in this pipeline):**
-- `--min-opacity 0.05` -- prunes near-transparent floater splats
-- `--enable-mip` -- mip filtering reduces aliasing artifacts
-- Higher `--max-cap` with more iterations helps MCMC converge
-
-**At render time (in Unreal Engine, Unity, etc.):**
-- Use the 3DGS plugin's opacity threshold/cutoff slider
-- This is non-destructive and gives real-time control per scene
-- Generally the better place for final cleanup
+| Small test | 30 | half | 200K | ~20s | ~160 |
+| Medium | 6,821 | half | 1M | ~8 min | ~60 |
+| Medium | 6,821 | full | 1M | ~19 min | ~26 |
+| Large | 23,630 | half | 2M | ~8 min | ~60 |
 
 ## Files
 
 | File | Purpose |
 |------|---------|
+| `lib/common.sh` | Shared functions (logging, GPU detection, paths, COLMAP helpers) |
 | `setup_lichtfeld.sh` | Full build pipeline (run this first) |
 | `run_test_training.sh` | Quick 30-image test run to verify the build |
-| `overlay-ports/sdl3/` | vcpkg overlay port (SDL3 without XTEST/ibus) |
+| `train_full.sh` | Full resolution production training with live monitoring |
+| `benchmark.sh` | Multi-config benchmark runner (ADC + MCMC comparison) |
 | `setup_claude_wsl.sh` | Bootstrap script for Claude Code in WSL |
+| `overlay-ports/sdl3/` | vcpkg overlay port (SDL3 without XTEST/ibus) |
 | `SETUP_LICHTFELD_WSL.md` | Detailed manual setup reference |
 
 ## Known Issues
 
-1. **GCC 14 required:** C++23 `<print>` header is only available in GCC 14+. GCC 13 (Ubuntu 24.04 default) will not work. The script installs GCC 14 automatically (via PPA with sudo, or from debs without sudo).
-2. **libgomp.so broken symlink:** When GCC 14 is extracted from debs without sudo, the `libgomp.so` symlink points to a non-existent path. The script detects and fixes this automatically.
-3. **Missing OpenGL/X11 in WSL2:** Minimal WSL2 installs lack GL and X11 dev headers. The script installs them from debs to `~/.local` when sudo is unavailable.
-4. **pkg.m4 needed for libb2:** vcpkg's libb2 port runs `autoreconf` which needs `pkg.m4` for the `PKG_CHECK_MODULES` macro. Without it, the build fails with `pkgconfigdir is undefined`. The script installs this macro.
-5. **Autoconf < 2.71 (Ubuntu 20.04):** vcpkg's Python3 port needs 2.71+. The script builds 2.72 from source.
-6. **Missing libxtst-dev / libibus-1.0-dev:** SDL3 build fails without these. The included overlay port disables XTEST and ibus.
-7. **WSL2 has no display:** Always use `--headless` for training.
-8. **LibTorch URLs change:** The script tries 4 different download channels.
-9. **RealityScan image layout:** RealityScan exports images at root level, not in `images/`. `run_test_training.sh` handles this.
-10. **Ubuntu 20.04 (GLIBC 2.31):** Kitware apt repo for cmake won't work. The script falls back to `pip3 install cmake`.
+1. **MCMC + `--min-opacity` crash:** MCMC's cap_max parser misinterprets `--min-opacity` values, requesting 17 PB of memory. **Use ADC instead**, which handles opacity correctly.
+2. **GCC 14 required:** C++23 `<print>` header is only available in GCC 14+. GCC 13 (Ubuntu 24.04 default) will not work. The script installs GCC 14 automatically.
+3. **libgomp.so broken symlink:** When GCC 14 is extracted from debs without sudo, the `libgomp.so` symlink points to a non-existent path. The script detects and fixes this automatically.
+4. **Missing OpenGL/X11 in WSL2:** Minimal WSL2 installs lack GL and X11 dev headers. The script installs them from debs to `~/.local` when sudo is unavailable.
+5. **pkg.m4 needed for libb2:** vcpkg's libb2 port runs `autoreconf` which needs `pkg.m4`. The script installs this macro.
+6. **Autoconf < 2.71 (Ubuntu 20.04):** vcpkg's Python3 port needs 2.71+. The script builds 2.72 from source.
+7. **Missing libxtst-dev / libibus-1.0-dev:** SDL3 build fails without these. The included overlay port disables XTEST and ibus.
+8. **WSL2 has no display:** Always use `--headless` for training.
+9. **LibTorch URLs change:** The script tries 4 different download channels.
+10. **RealityScan image layout:** RealityScan exports images at root level, not in `images/`. The training scripts handle this.
+11. **Ubuntu 20.04 (GLIBC 2.31):** Kitware apt repo for cmake won't work. The script falls back to `pip3 install cmake`.
 
 ## License
 
