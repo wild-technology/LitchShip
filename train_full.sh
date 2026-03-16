@@ -325,9 +325,30 @@ if [ $TRAIN_EXIT -eq 0 ]; then
     info "Total output size: $(du -sh "$OUTPUT_DIR" | cut -f1)"
     echo ""
 
-    FINAL_PLY=$(find "$OUTPUT_DIR" -name '*.ply' -type f | sort | tail -1)
+    FINAL_PLY=$(find "$OUTPUT_DIR" -name '*.ply' -type f -not -name '*_cleaned*' | sort | tail -1)
     if [ -n "$FINAL_PLY" ]; then
         PLY_SIZE=$(du -h "$FINAL_PLY" | cut -f1)
+
+        # Post-process: remove low-opacity floaters and spatial outliers
+        CLEAN_SCRIPT="$SCRIPT_DIR/clean_splat.py"
+        if [ -f "$CLEAN_SCRIPT" ]; then
+            echo ""
+            echo "=== Post-Processing: Outlier Removal ==="
+            CLEANED_PLY="${FINAL_PLY%.ply}_cleaned.ply"
+            python3 "$CLEAN_SCRIPT" "$FINAL_PLY" "$CLEANED_PLY" \
+                -k 20 -s 2.0 -p 3 --opacity-min 0.05
+
+            if [ -f "$CLEANED_PLY" ]; then
+                CLEAN_SIZE=$(du -h "$CLEANED_PLY" | cut -f1)
+                log "Cleaned splat: $CLEANED_PLY ($CLEAN_SIZE)"
+                FINAL_PLY="$CLEANED_PLY"
+                PLY_SIZE="$CLEAN_SIZE"
+            else
+                warn "Cleaning failed, using raw splat"
+            fi
+        fi
+
+        echo ""
         echo -e "${BOLD}============================================${NC}"
         echo -e "${GREEN}  Training Complete!${NC}"
         echo -e "${BOLD}============================================${NC}"

@@ -247,6 +247,19 @@ TRAIN_EXIT=$?
 echo ""
 if [ $TRAIN_EXIT -eq 0 ]; then
     log "Training completed successfully!"
+
+    # Post-process: remove low-opacity floaters and spatial outliers
+    FINAL_PLY=$(find "$OUTPUT_DIR" -name '*.ply' -type f -not -name '*_cleaned*' | sort | tail -1)
+    CLEAN_SCRIPT="$SCRIPT_DIR/clean_splat.py"
+    if [ -n "$FINAL_PLY" ] && [ -f "$CLEAN_SCRIPT" ]; then
+        echo ""
+        echo "=== Post-Processing: Outlier Removal ==="
+        CLEANED_PLY="${FINAL_PLY%.ply}_cleaned.ply"
+        python3 "$CLEAN_SCRIPT" "$FINAL_PLY" "$CLEANED_PLY" \
+            -k 20 -s 2.0 -p 3 --opacity-min 0.05
+        [ -f "$CLEANED_PLY" ] && log "Cleaned: $CLEANED_PLY ($(du -h "$CLEANED_PLY" | cut -f1))"
+    fi
+
     echo ""
     info "Output files:"
     find "$OUTPUT_DIR" -type f | head -20

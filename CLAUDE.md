@@ -35,6 +35,7 @@
 | File | Purpose |
 |------|---------|
 | `lib/common.sh` | Shared functions (colors, logging, GPU, paths, binary discovery) |
+| `clean_splat.py` | Post-processing: opacity filter + iterative statistical outlier removal |
 | `setup_lichtfeld.sh` | Full environment + build setup (supports `--no-sudo`) |
 | `run_test_training.sh` | Quick 30-image test run to verify the build |
 | `train_full.sh` | Full resolution production training pipeline |
@@ -67,6 +68,22 @@ cmake .. -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DCMAKE_PREFIX_PATH=$HOME/gaussian-splatting-cuda/external/libtorch
 cmake --build . --config Release -j$(nproc)
+```
+
+## Post-Processing
+
+All training scripts automatically run `clean_splat.py` after training to remove
+low-opacity floaters and spatial outliers. To run manually:
+
+```bash
+# Default: opacity filter (< 5%) + 3 passes of statistical outlier removal
+python3 clean_splat.py input.ply output.ply
+
+# More aggressive (tighter threshold, higher opacity cutoff)
+python3 clean_splat.py input.ply output.ply -s 1.5 --opacity-min 0.1
+
+# With bounding box clip and scale filter
+python3 clean_splat.py input.ply output.ply --bbox -10,-10,-10,10,10,10 --scale-max 0.5
 ```
 
 ## Training Scripts

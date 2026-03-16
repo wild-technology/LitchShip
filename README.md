@@ -127,6 +127,33 @@ dataset/
 
 Image filenames in `images.txt` must match actual files in `images/`. If images are at the root level (common with RealityScan exports), move them into an `images/` subdirectory.
 
+## Post-Processing (Outlier Removal)
+
+All training scripts automatically clean the output splat after training. The `clean_splat.py` tool removes:
+
+1. **Low-opacity floaters** — near-invisible splats (opacity < 5%) that cause haze
+2. **Spatial outliers** — isolated splats far from the scene core (iterative KNN-based statistical outlier removal)
+
+```bash
+# Run manually with default settings
+python3 clean_splat.py input.ply output.ply
+
+# More aggressive cleanup
+python3 clean_splat.py input.ply output.ply -s 1.5 -p 5 --opacity-min 0.1
+
+# Dry run (report what would be removed)
+python3 clean_splat.py input.ply --dry-run
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-k` | K nearest neighbors for density | 20 |
+| `-s` | Std deviation threshold (lower = more aggressive) | 2.0 |
+| `-p` | Number of iterative passes | 3 |
+| `--opacity-min` | Remove splats below this opacity | 0.05 |
+| `--scale-max` | Remove splats above this scale | off |
+| `--bbox` | Clip to bounding box (xmin,ymin,zmin,xmax,ymax,zmax) | off |
+
 ## Training Options
 
 | Flag | Description | Recommended |
@@ -155,6 +182,7 @@ Image filenames in `images.txt` must match actual files in `images/`. If images 
 | File | Purpose |
 |------|---------|
 | `lib/common.sh` | Shared functions (logging, GPU detection, paths, COLMAP helpers) |
+| `clean_splat.py` | Post-processing: opacity filter + statistical outlier removal |
 | `setup_lichtfeld.sh` | Full build pipeline (run this first) |
 | `run_test_training.sh` | Quick 30-image test run to verify the build |
 | `train_full.sh` | Full resolution production training with live monitoring |

@@ -134,11 +134,24 @@ for i in "${!CONFIGS[@]}"; do
     ELAPSED=$((END_TIME - START_TIME))
     ELAPSED_FMT="$(printf '%02d:%02d:%02d' $((ELAPSED/3600)) $(((ELAPSED%3600)/60)) $((ELAPSED%60)))"
 
-    # Find output PLY
-    PLY_FILE=$(find "$OUTPUT_DIR" -name '*.ply' -type f | sort | tail -1)
+    # Find output PLY and clean it
+    PLY_FILE=$(find "$OUTPUT_DIR" -name '*.ply' -type f -not -name '*_cleaned*' | sort | tail -1)
     PLY_SIZE="N/A"
     if [ -n "$PLY_FILE" ]; then
         PLY_SIZE=$(du -h "$PLY_FILE" | cut -f1)
+
+        # Post-process: remove low-opacity floaters and spatial outliers
+        CLEAN_SCRIPT="$SCRIPT_DIR/clean_splat.py"
+        if [ -f "$CLEAN_SCRIPT" ]; then
+            CLEANED_PLY="${PLY_FILE%.ply}_cleaned.ply"
+            info "Cleaning splat (opacity + SOR)..."
+            python3 "$CLEAN_SCRIPT" "$PLY_FILE" "$CLEANED_PLY" \
+                -k 20 -s 2.0 -p 3 --opacity-min 0.05 2>&1 | tail -5
+            if [ -f "$CLEANED_PLY" ]; then
+                PLY_FILE="$CLEANED_PLY"
+                PLY_SIZE=$(du -h "$PLY_FILE" | cut -f1)
+            fi
+        fi
 
         # Copy to splat destination if provided
         if [ -n "$SPLAT_DEST" ]; then
