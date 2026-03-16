@@ -14,14 +14,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-log()   { echo -e "${GREEN}[✓]${NC} $1"; }
-warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
-error() { echo -e "${RED}[✗]${NC} $1"; }
+source "$SCRIPT_DIR/lib/common.sh"
 
 REPO_DIR="$HOME/gaussian-splatting-cuda"
 CUDA_ROOT="/usr/local/cuda"
@@ -184,7 +177,12 @@ else
     warn "nvidia-smi not found. It should appear after CUDA toolkit install."
 fi
 
-# Detect GPU compute capability for CUDA arch
+# Detect GPU compute capability for CUDA arch.
+# Maps GPU model name patterns to SM architecture versions:
+#   sm_120 = Blackwell (RTX 50xx, B-series)
+#   sm_89  = Ada Lovelace / Hopper (RTX 40xx, L40, H100/H200)
+#   sm_86  = Ampere (RTX 30xx, A100, A6000)
+#   sm_75  = Turing (RTX 20xx, T4)
 CUDA_ARCH="120"  # Default: Blackwell
 if command -v nvidia-smi &>/dev/null; then
     GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
@@ -601,6 +599,13 @@ if [ -x "$LOCAL_PREFIX/bin/gcc-14" ]; then
     log "Using GCC 14 from $LOCAL_PREFIX/bin"
 fi
 
+# CMAKE_CUDA_ARCHITECTURES: target the detected GPU (see CUDA_ARCH above)
+# CUDAToolkit_ROOT: explicit CUDA path avoids cmake finding wrong toolkit
+# CMAKE_TOOLCHAIN_FILE: vcpkg manages C++ deps (SDL3, glm, spdlog, etc.)
+# CMAKE_PREFIX_PATH: manually-installed LibTorch (not vcpkg — see known issues)
+# OVERLAY_ARG: our SDL3 port disables XTEST/ibus for headless builds
+# OPENGL_ARGS: points to ~/.local if GL was extracted from debs
+# CC_ARGS: uses locally-installed GCC 14 if present
 cmake .. \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
@@ -665,11 +670,13 @@ echo ""
 echo "  $BINARY \\"
 echo "      -d /path/to/colmap/dataset \\"
 echo "      -o ~/output/my_scene \\"
-echo "      --strategy mcmc \\"
+echo "      --strategy adc \\"
 echo "      --max-cap 1000000 \\"
 echo "      -i 30000 \\"
 echo "      -r 2 \\"
-echo "      --min-opacity 0.05 \\"
+echo "      --min-opacity 0.1 \\"
+echo "      --enable-sparsity \\"
+echo "      --prune-ratio 0.6 \\"
 echo "      --enable-mip \\"
 echo "      --headless"
 echo ""

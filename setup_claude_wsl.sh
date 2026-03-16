@@ -68,6 +68,21 @@ echo ""
 
 echo "=== [3/3] Project Context (CLAUDE.md) ==="
 
+# Don't overwrite CLAUDE.md if it already exists — it may contain
+# project-specific instructions that have been refined over time.
+if [ -f "$REPO_DIR/CLAUDE.md" ]; then
+    log "CLAUDE.md already exists, not overwriting"
+    echo ""
+    echo "============================================"
+    echo "  Setup Complete!"
+    echo "============================================"
+    echo ""
+    echo "Next steps:"
+    echo "  cd $REPO_DIR && claude"
+    echo ""
+    exit 0
+fi
+
 # Gather live environment info
 GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "unknown")
 GPU_MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader 2>/dev/null | head -1 || echo "unknown")
@@ -99,10 +114,9 @@ cat > "$REPO_DIR/CLAUDE.md" << HEREDOC
 - **Python:** $(python3 --version 2>/dev/null || echo "not found")
 
 ## Data
-- **Source (Windows):** /mnt/c/Users/WildTech/Desktop/H2103d_test_colmap_workflow
-- **Working copy:** ~/data/H2103d_test_colmap_workflow
+- **Source:** Copy your COLMAP dataset to ~/data/ for best performance
 - **Format:** RealityScan 2.1 export (undistorted images + COLMAP text format)
-- **Size:** 200+ images
+- **Layout:** images/ + sparse/0/{cameras,images,points3D}.txt
 
 ## Current Task
 
@@ -114,7 +128,7 @@ Python gsplat implementation.
 - setup_lichtfeld.sh exists and handles: CUDA detection, GCC 14, CMake 3.30+,
   vcpkg, repo clone, LibTorch download, cmake build
 - run_test_training.sh: creates 30-image subset, filters COLMAP files, runs
-  3K iteration MCMC training
+  3K iteration ADC training
 - CUDA $CUDA_VER, GCC 14, CMake, vcpkg all confirmed working on this system
 
 ### What's in progress
@@ -176,7 +190,7 @@ find build/ -type f -executable | head -10
 ./build/bin/lichtfeld-studio \\
     -d ~/data/H2103d_test_colmap_workflow \\
     -o ~/output/H2103d_test \\
-    --strategy mcmc \\
+    --strategy adc \\
     --max-cap 200000 \\
     -i 3000 -r 2
 \`\`\`
