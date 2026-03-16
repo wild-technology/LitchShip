@@ -38,11 +38,49 @@ In RealityScan 2.1:
 
 ### Optional: Quality Report JSON
 
-For enhanced tiering, export a per-image quality report using the provided template:
+For enhanced tiering, export a per-image quality report using the provided template.
+This extracts `numPoints`, `imageCoverage`, and `reprojError` stats per camera.
 
-1. Copy `templates/quality_report.json.tpl` to RealityScan's `Reports/` directory
-2. Add the XML entry from the template comments to `Report.xml`
-3. Export via CLI: `-exportReport "output/quality_report.json" "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"`
+**Automated install (on Windows where RealityScan is installed):**
+
+```powershell
+# Auto-detects RealityScan installation
+python install_template.py
+
+# Or specify the path explicitly
+python install_template.py --rs-path "D:\Epic Games\RealityScan"
+
+# Preview what it would do
+python install_template.py --dry-run
+```
+
+**Manual install:**
+
+1. Copy `templates/quality_report.json.tpl` to `C:\Program Files\Epic Games\RealityScan\Reports\`
+2. Add this entry to `Report.xml` (inside the `<formats>` element):
+   ```xml
+   <format id="{8F3A1B2C-4D5E-6F78-9A0B-C1D2E3F4A5B6}" mask="*.json"
+           desc="Quality Report (JSON) for LitchShip"
+           writer="RealityScan.Export.ReportWriter">
+     <hint>Per-image quality metrics for progressive Gaussian splatting training</hint>
+     <body>$Include("Reports\quality_report.json.tpl")</body>
+   </format>
+   ```
+
+**Export the report:**
+
+```
+GUI:  ALIGNMENT tab -> Export -> Report -> "Quality Report (JSON) for LitchShip"
+CLI:  RealityScan.exe -load project.rsproj -exportReport "C:\output\quality_report.json" "{8F3A1B2C-4D5E-6F78-9A0B-C1D2E3F4A5B6}"
+```
+
+**Post-process (fixes JSON formatting from template engine quirks):**
+
+```bash
+python fix_report_json.py quality_report.json --in-place
+```
+
+Note: `analyze_colmap.py` auto-cleans the JSON on load, so this step is optional but useful for inspection.
 
 Place the resulting `quality_report.json` in your dataset root — `analyze_colmap.py` auto-detects it.
 
@@ -96,6 +134,25 @@ Stage 3 (refine):  10K iter, 2M max gaussians,   tier3 points
 Use `--compare` to also run a single-pass 30K baseline for A/B quality comparison.
 
 ## CLI Reference
+
+### install_template.py
+
+```
+python install_template.py [--rs-path DIR] [--dry-run]
+
+  --rs-path DIR  RealityScan installation directory (auto-detected if omitted)
+  --dry-run      Show what would be done without making changes
+```
+
+### fix_report_json.py
+
+```
+python fix_report_json.py <input> [--output FILE] [--in-place]
+
+  input          Raw quality_report.json from RealityScan
+  --output FILE  Write cleaned JSON to FILE (default: stdout)
+  --in-place     Overwrite input file with cleaned JSON
+```
 
 ### analyze_colmap.py
 

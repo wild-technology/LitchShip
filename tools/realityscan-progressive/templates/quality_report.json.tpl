@@ -1,56 +1,94 @@
 {
-  "generator": "LitchShip RealityScan Progressive Pipeline",
+  "generator": "LitchShip Progressive Pipeline",
   "version": "1.0",
   "component": {
-    "medianError": $componentMedianError,
-    "meanError": $componentMeanError,
-    "avgTrackLength": $componentAverageTrackLength,
-    "totalProjections": $componentTotalProjection
+    "medianError": $(componentMedianError),
+    "meanError": $(componentMeanError),
+    "avgTrackLength": $(componentAverageTrackLength),
+    "totalProjections": $(componentTotalProjection),
+    "cameraCount": $(cameraCount)
   },
   "cameras": [
-$IterateCameras(    {
+$IterateCameras($If( $(index) > 0, COMMA_PLACEHOLDER)
+    {
       "index": $(index),
       "image": "$(imageName).$(imageExt)",
       "width": $(width),
       "height": $(height),
-      "numPoints": $CameraErrors($(numPoints)),
-      "imageCoverage": $CameraErrors($(imageCoverage)),
-      "reprojError": $CameraErrors($ReprojectionError({
+$CameraErrors( cameraIndex,
+      "numPoints": $(numPoints),
+      "imageCoverage": $(imageCoverage),
+      "reprojError": $ReprojectionError({
         "median": $(median),
         "mean": $(mean),
         "max": $(max),
-        "stdev": $(stdev)
-      }))
+        "stdev": $(stdev),
+        "mode": $(mode)
+      })
+)
     })
   ]
 }
-
 <!--
   RealityScan Report Template — Quality Report for Progressive Training
   =====================================================================
 
-  INSTALLATION:
+  This template extracts per-image quality metrics from a RealityScan
+  project and outputs them as JSON for use by the LitchShip progressive
+  training pipeline (analyze_colmap.py).
 
-  1. Copy this file to your RealityScan installation's Reports/ directory:
+  INSTALLATION (automated):
+
+    python install_template.py
+    python install_template.py --rs-path "D:\Epic Games\RealityScan"
+
+  INSTALLATION (manual):
+
+  1. Copy this file to RealityScan's Reports/ directory:
      C:\Program Files\Epic Games\RealityScan\Reports\quality_report.json.tpl
 
-  2. Add the following entry to Report.xml in the same directory:
+  2. Add the following entry to Report.xml in the RealityScan install directory
+     (inside the root <formats> element):
 
-     <report>
-       <guid>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</guid>
-       <filemask>*.json</filemask>
-       <description>Quality Report (JSON) for LitchShip Progressive Training</description>
-       <body>quality_report.json.tpl</body>
-     </report>
+     <format id="{8F3A1B2C-4D5E-6F78-9A0B-C1D2E3F4A5B6}" mask="*.json" desc="Quality Report (JSON) for LitchShip" writer="RealityScan.Export.ReportWriter">
+       <hint>Per-image quality metrics (tie points, coverage, reprojection error) for progressive Gaussian splatting training</hint>
+       <body>$Include("Reports\quality_report.json.tpl")</body>
+     </format>
 
-  3. Export via GUI:  ALIGNMENT tab → Export → Report → select "Quality Report (JSON)"
-     Export via CLI:  -exportReport "C:\output\quality_report.json" "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+  EXPORT:
 
-  NOTES:
-  - The $IterateCameras function iterates over all registered cameras in the component
-  - $CameraErrors exposes per-image tie-point statistics
-  - $ReprojectionError provides pixel-level error distribution within $CameraErrors
-  - Comma handling: RealityScan's template engine handles array separators automatically
-    when using $IterateCameras. If your export has trailing commas, post-process with:
-      python3 -c "import json,sys; json.dump(json.load(open(sys.argv[1])),open(sys.argv[1],'w'),indent=2)" quality_report.json
+    GUI:  ALIGNMENT tab -> Export -> Report -> select "Quality Report (JSON) for LitchShip"
+    CLI:  RealityScan.exe -load project.rsproj -exportReport "C:\output\quality_report.json" "{8F3A1B2C-4D5E-6F78-9A0B-C1D2E3F4A5B6}"
+
+  POST-PROCESSING:
+
+    The template uses COMMA_PLACEHOLDER for JSON array separators because
+    RealityScan's $If function may conflict with literal commas as arguments.
+    Run the post-processor to produce valid JSON:
+
+      python fix_report_json.py C:\output\quality_report.json
+
+    Or simply pass the raw file to analyze_colmap.py — it cleans up automatically.
+
+  TEMPLATE FUNCTION REFERENCE:
+
+    $IterateCameras(body)
+      Iterates all registered cameras in the selected component.
+      Exposes: $(index), $(imageName), $(imageExt), $(width), $(height)
+
+    $CameraErrors(cameraIndex, body)
+      Per-camera tie-point statistics for the camera at cameraIndex.
+      Exposes: $(numPoints), $(imageCoverage)
+
+    $ReprojectionError(body)
+      Reprojection error distribution (nested inside $CameraErrors).
+      Exposes: $(median), $(mean), $(min), $(max), $(stdev), $(mode)
+
+    $If(condition, trueText)
+      Conditional output. Used here to prepend commas between JSON array elements.
+
+    $(componentMedianError), $(componentMeanError), etc.
+      Component-level aggregate statistics (Basic/Component scope).
+
+  See: https://rshelp.capturingreality.com/en-US/appbasics/reports_fav_cameras.htm
 -->

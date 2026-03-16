@@ -13,6 +13,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -158,11 +159,31 @@ def compute_image_quality(images: dict, points: dict) -> dict:
     return image_quality
 
 
+def _clean_rs_json(raw: str) -> str:
+    """Clean raw RealityScan report JSON (same logic as fix_report_json.py)."""
+    text = re.sub(r"<!--[\s\S]*?-->", "", raw)
+    text = text.replace("COMMA_PLACEHOLDER", ",")
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    return text.strip()
+
+
 def merge_rs_report(image_quality: dict, rs_report_path: Path) -> dict:
-    """Merge RealityScan quality report into image quality metrics."""
+    """Merge RealityScan quality report into image quality metrics.
+
+    Automatically cleans up common RealityScan template output issues
+    (trailing commas, COMMA_PLACEHOLDER tokens, HTML comments) so users
+    don't need to run fix_report_json.py first.
+    """
     try:
         with open(rs_report_path, "r") as f:
-            rs_data = json.load(f)
+            raw = f.read()
+        # Try parsing as-is first, fall back to cleanup
+        try:
+            rs_data = json.loads(raw)
+        except json.JSONDecodeError:
+            cleaned = _clean_rs_json(raw)
+            rs_data = json.loads(cleaned)
+            print(f"  (auto-cleaned RS report JSON)")
     except (json.JSONDecodeError, OSError) as e:
         print(f"WARNING: Could not parse RS report {rs_report_path}: {e}", file=sys.stderr)
         return image_quality
