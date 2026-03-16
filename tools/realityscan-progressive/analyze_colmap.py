@@ -18,6 +18,8 @@ import statistics
 import sys
 from pathlib import Path
 
+import numpy as np
+
 
 def find_sparse_dir(dataset: Path) -> Path:
     """Locate the COLMAP sparse directory within a dataset."""
@@ -112,6 +114,124 @@ def parse_images(filepath: Path) -> dict:
         }
 
     return images
+
+
+def parse_cameras(filepath: Path) -> dict:
+    """Parse cameras.txt → dict of {camera_id: {model, width, height, params}}."""
+    cameras = {}
+    with open(filepath, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            cam_id = int(parts[0])
+            model = parts[1]
+            width, height = int(parts[2]), int(parts[3])
+            params = [float(p) for p in parts[4:]]
+            cameras[cam_id] = {
+                "model": model, "width": width, "height": height, "params": params,
+            }
+    return cameras
+
+
+def qvec_to_rotmat(qvec):
+    """Convert COLMAP quaternion [qw, qx, qy, qz] to 3x3 rotation matrix."""
+    qw, qx, qy, qz = qvec
+    return np.array([
+        [1 - 2*qy*qy - 2*qz*qz, 2*qx*qy - 2*qz*qw,     2*qx*qz + 2*qy*qw],
+        [2*qx*qy + 2*qz*qw,     1 - 2*qx*qx - 2*qz*qz, 2*qy*qz - 2*qx*qw],
+        [2*qx*qz - 2*qy*qw,     2*qy*qz + 2*qx*qw,     1 - 2*qx*qx - 2*qy*qy],
+    ])
+
+
+def compute_reprojection_errors(images: dict, points: dict, cameras: dict) -> dict:
+    """Compute per-point reprojection errors by projecting 3D points into cameras.
+
+    Returns dict of {point_id: mean_reprojection_error_px}.
+    Processes per-image with numpy vectorization for speed on large datasets.
+    """
+    # Accumulators: sum of errors and observation count per point
+    error_sum = {}
+    error_count = {}
+
+    total_obs = 0
+    for image_id, img in images.items():
+        cam = cameras.get(img["camera_id"])
+        if cam is None:
+            continue
+
+        # Build world-to-camera transform
+        R = qvec_to_rotmat(img["qvec"])
+        t = np.array(img["tvec"])
+
+        # Camera intrinsics — support SIMPLE_PINHOLE and PINHOLE
+        model = cam["model"]
+        params = cam["params"]
+        if model == "SIMPLE_PINHOLE":
+            f, cx, cy = params[0], params[1], params[2]
+            fx = fy = f
+        elif model == "PINHOLE":
+            fx, fy, cx, cy = params[0], params[1], params[2], params[3]
+        else:
+            # Skip unsupported camera models
+            continue
+
+        # Gather observations with valid 3D point references
+        obs_2d = []
+        obs_pids = []
+        pts_3d = []
+        for ox, oy, pid in img["observations"]:
+            if pid == -1 or pid not in points:
+                continue
+            p = points[pid]
+            obs_2d.append((ox, oy))
+            obs_pids.append(pid)
+            pts_3d.append((p["x"], p["y"], p["z"]))
+
+        if not pts_3d:
+            continue
+
+        # Vectorized projection
+        pts_world = np.array(pts_3d)  # (N, 3)
+        obs_px = np.array(obs_2d)     # (N, 2)
+
+        # Transform to camera coordinates: p_cam = R @ p_world + t
+        pts_cam = (R @ pts_world.T).T + t  # (N, 3)
+
+        # Avoid division by zero for points behind camera
+        z = pts_cam[:, 2]
+        valid = z > 1e-6
+        if not np.any(valid):
+            continue
+
+        # Project: u = fx * x/z + cx, v = fy * y/z + cy
+        proj_x = fx * pts_cam[valid, 0] / z[valid] + cx
+        proj_y = fy * pts_cam[valid, 1] / z[valid] + cy
+
+        # Reprojection error (Euclidean pixel distance)
+        dx = proj_x - obs_px[valid, 0]
+        dy = proj_y - obs_px[valid, 1]
+        errors = np.sqrt(dx * dx + dy * dy)
+
+        # Accumulate per-point
+        valid_pids = [obs_pids[i] for i in range(len(obs_pids)) if valid[i]]
+        for pid, err in zip(valid_pids, errors):
+            if pid in error_sum:
+                error_sum[pid] += err
+                error_count[pid] += 1
+            else:
+                error_sum[pid] = err
+                error_count[pid] = 1
+
+        total_obs += int(np.sum(valid))
+
+    # Compute mean error per point
+    point_errors = {}
+    for pid in error_sum:
+        point_errors[pid] = error_sum[pid] / error_count[pid]
+
+    return point_errors, total_obs
 
 
 def compute_point_stats(points: dict) -> dict:
@@ -267,6 +387,10 @@ def main():
     print(f"Analyzing COLMAP data in: {sparse_dir}")
 
     # Parse COLMAP files
+    print("  Parsing cameras.txt...")
+    cameras = parse_cameras(sparse_dir / "cameras.txt")
+    print(f"  Found {len(cameras)} cameras")
+
     print("  Parsing points3D.txt...")
     points = parse_points3d(sparse_dir / "points3D.txt")
     print(f"  Found {len(points)} 3D points")
@@ -274,6 +398,22 @@ def main():
     print("  Parsing images.txt...")
     images = parse_images(sparse_dir / "images.txt")
     print(f"  Found {len(images)} registered images")
+
+    # Check if COLMAP error field is populated
+    sample_errors = [p["error"] for _, p in zip(range(1000), points.values())]
+    errors_are_zero = all(e == 0.0 for e in sample_errors)
+
+    if errors_are_zero:
+        print("\n  COLMAP error field is all zeros (RealityScan export)")
+        print("  Computing reprojection errors from camera geometry...")
+        computed_errors, total_obs = compute_reprojection_errors(images, points, cameras)
+        print(f"  Computed errors for {len(computed_errors):,} points from {total_obs:,} observations")
+
+        # Write computed errors back into points dict
+        for pid, err in computed_errors.items():
+            points[pid]["error"] = err
+    else:
+        print("\n  Using COLMAP error field (already populated)")
 
     # Compute statistics
     point_stats = compute_point_stats(points)

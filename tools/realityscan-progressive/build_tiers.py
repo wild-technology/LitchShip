@@ -167,27 +167,42 @@ def build_tier(
         kept_point_ids,
     )
 
-    # Symlink images directory to avoid duplication
+    # Link images directory to avoid duplication
+    # On Windows, use junction (no admin required); on Unix, use symlink
     if tier_images.exists() or tier_images.is_symlink():
-        tier_images.unlink() if tier_images.is_symlink() else shutil.rmtree(tier_images)
-    tier_images.symlink_to(images_dir.resolve())
+        if tier_images.is_symlink() or (sys.platform == "win32" and tier_images.is_dir()):
+            # Could be a junction or symlink
+            try:
+                tier_images.unlink()
+            except OSError:
+                shutil.rmtree(tier_images)
+        else:
+            shutil.rmtree(tier_images)
+    if sys.platform == "win32":
+        import subprocess
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(tier_images), str(images_dir.resolve())],
+            check=True, capture_output=True,
+        )
+    else:
+        tier_images.symlink_to(images_dir.resolve())
 
     # Compute tier stats
-    tier_errors = []
-    tier_tracks = []
-    for pid in kept_point_ids:
-        if pid in analysis.get("_points_cache", {}):
-            p = analysis["_points_cache"][pid]
-            tier_errors.append(p["error"])
-            tier_tracks.append(p["track_length"])
-
     total = len(point_lines)
     count = len(kept_point_ids)
-    avg_error = sum(tier_errors) / len(tier_errors) if tier_errors else 0
-    avg_track = sum(tier_tracks) / len(tier_tracks) if tier_tracks else 0
+    cache = analysis.get("_points_cache", {})
 
-    print(f"  Tier {tier_num} ({tier_name}): {count:>7,} / {total:,} points "
-          f"({100*count/total:.1f}%) — avg track {avg_track:.1f}, avg error {avg_error:.2f}px")
+    if cache:
+        tier_errors = [cache[pid]["error"] for pid in kept_point_ids if pid in cache]
+        tier_tracks = [cache[pid]["track_length"] for pid in kept_point_ids if pid in cache]
+        avg_error = sum(tier_errors) / len(tier_errors) if tier_errors else 0
+        avg_track = sum(tier_tracks) / len(tier_tracks) if tier_tracks else 0
+        print(f"  Tier {tier_num} ({tier_name}): {count:>7,} / {total:,} points "
+              f"({100*count/total:.1f}%) -- avg track {avg_track:.1f}, avg error {avg_error:.2f}px")
+    else:
+        avg_error = avg_track = 0
+        print(f"  Tier {tier_num} ({tier_name}): {count:>7,} / {total:,} points "
+              f"({100*count/total:.1f}%)")
 
     return {"count": count, "avg_error": avg_error, "avg_track": avg_track}
 
@@ -208,9 +223,9 @@ def main():
     parser.add_argument("--t2-min-track", type=int, default=3,
                         help="Tier 2: minimum track length (default: 3)")
     parser.add_argument("--t2-max-error-pct", type=float, default=200.0,
-                        help="Tier 2: max error as %% of median (default: 200 = 2× median)")
+                        help="Tier 2: max error as %% of median (default: 200 = 2x median)")
     parser.add_argument("--t3-max-error-pct", type=float, default=300.0,
-                        help="Tier 3: max error as %% of median (default: 300 = 3× median)")
+                        help="Tier 3: max error as %% of median (default: 300 = 3x median)")
     args = parser.parse_args()
 
     dataset = args.dataset.resolve()
@@ -244,46 +259,92 @@ def main():
     # Parse raw points3D.txt to preserve exact formatting
     header_lines, point_lines = parse_points3d_raw(sparse_dir / "points3D.txt")
 
-    # Re-parse points for stats (we need error and track_length per point)
-    # Import the parser from analyze_colmap
-    sys.path.insert(0, str(Path(__file__).parent))
-    from analyze_colmap import parse_points3d
-    points_data = parse_points3d(sparse_dir / "points3D.txt")
-    analysis["_points_cache"] = points_data
+    # Check if user specified custom thresholds (any non-default value)
+    custom_thresholds = (
+        args.t1_min_track != 5
+        or args.t1_max_error_pct != 100.0
+        or args.t2_min_track != 3
+        or args.t2_max_error_pct != 200.0
+        or args.t3_max_error_pct != 300.0
+    )
 
-    # Compute tier thresholds
-    t1_max_error = median_error * (args.t1_max_error_pct / 100.0)
-    t2_max_error = median_error * (args.t2_max_error_pct / 100.0)
-    t3_max_error = median_error * (args.t3_max_error_pct / 100.0)
+    if custom_thresholds:
+        # Re-parse points to get error/track values for custom threshold evaluation
+        # Import the parser from analyze_colmap
+        sys.path.insert(0, str(Path(__file__).parent))
+        from analyze_colmap import parse_points3d, parse_cameras, compute_reprojection_errors, parse_images
 
-    print(f"\nThresholds (median error = {median_error:.3f}px):")
-    print(f"  Tier 1: track ≥ {args.t1_min_track}, error < {t1_max_error:.3f}px")
-    print(f"  Tier 2: track ≥ {args.t2_min_track}, error < {t2_max_error:.3f}px")
-    print(f"  Tier 3: error < {t3_max_error:.3f}px")
-    print()
+        points_data = parse_points3d(sparse_dir / "points3D.txt")
 
-    # Build point sets — each tier is cumulative (growing seed)
-    tier1_ids = set()
-    tier2_ids = set()
-    tier3_ids = set()
+        # Check if errors are all zeros (RealityScan export) — recompute if so
+        sample_errs = [p["error"] for _, p in zip(range(1000), points_data.values())]
+        if all(e == 0.0 for e in sample_errs):
+            print("  Recomputing reprojection errors for custom thresholds...")
+            cameras = parse_cameras(sparse_dir / "cameras.txt")
+            images_data = parse_images(sparse_dir / "images.txt")
+            computed_errors, _ = compute_reprojection_errors(images_data, points_data, cameras)
+            for pid, err in computed_errors.items():
+                points_data[pid]["error"] = err
 
-    for pid_str, tier in point_tiers.items():
-        pid = int(pid_str)
-        p = points_data.get(pid)
-        if p is None:
-            continue
+        analysis["_points_cache"] = points_data
 
-        # Re-evaluate against user-specified thresholds (analysis.json used defaults)
-        if p["track_length"] >= args.t1_min_track and p["error"] < t1_max_error:
-            tier1_ids.add(pid)
-            tier2_ids.add(pid)
-            tier3_ids.add(pid)
-        elif p["track_length"] >= args.t2_min_track and p["error"] < t2_max_error:
-            tier2_ids.add(pid)
-            tier3_ids.add(pid)
-        elif p["error"] < t3_max_error:
-            tier3_ids.add(pid)
-        # else: dropped (outlier)
+        t1_max_error = median_error * (args.t1_max_error_pct / 100.0)
+        t2_max_error = median_error * (args.t2_max_error_pct / 100.0)
+        t3_max_error = median_error * (args.t3_max_error_pct / 100.0)
+
+        print(f"\nCustom thresholds (median error = {median_error:.3f}px):")
+        print(f"  Tier 1: track >= {args.t1_min_track}, error < {t1_max_error:.3f}px")
+        print(f"  Tier 2: track >= {args.t2_min_track}, error < {t2_max_error:.3f}px")
+        print(f"  Tier 3: error < {t3_max_error:.3f}px")
+        print()
+
+        tier1_ids = set()
+        tier2_ids = set()
+        tier3_ids = set()
+
+        for pid_str in point_tiers:
+            pid = int(pid_str)
+            p = points_data.get(pid)
+            if p is None:
+                continue
+            if p["track_length"] >= args.t1_min_track and p["error"] < t1_max_error:
+                tier1_ids.add(pid)
+                tier2_ids.add(pid)
+                tier3_ids.add(pid)
+            elif p["track_length"] >= args.t2_min_track and p["error"] < t2_max_error:
+                tier2_ids.add(pid)
+                tier3_ids.add(pid)
+            elif p["error"] < t3_max_error:
+                tier3_ids.add(pid)
+    else:
+        # Use pre-computed tier assignments from analysis.json (default thresholds)
+        analysis["_points_cache"] = {}  # no per-point stats needed
+
+        print(f"\nUsing pre-computed tiers from analysis.json (median error = {median_error:.3f}px):")
+        print(f"  Tier 1: track >= 5, error < {median_error:.3f}px")
+        print(f"  Tier 2: track >= 3, error < {2*median_error:.3f}px")
+        print(f"  Tier 3: error < {3*median_error:.3f}px")
+        print()
+
+        # Build cumulative sets from pre-assigned tiers
+        tier1_ids = set()
+        tier2_ids = set()
+        tier3_ids = set()
+
+        for pid_str, tier in point_tiers.items():
+            pid = int(pid_str)
+            if pid not in point_lines:
+                continue
+            if tier == 1:
+                tier1_ids.add(pid)
+                tier2_ids.add(pid)
+                tier3_ids.add(pid)
+            elif tier == 2:
+                tier2_ids.add(pid)
+                tier3_ids.add(pid)
+            elif tier == 3:
+                tier3_ids.add(pid)
+            # tier 0 = dropped
 
     dropped = len(point_lines) - len(tier3_ids)
 
@@ -294,9 +355,14 @@ def main():
     build_tier("tier2", 2, output_dir, sparse_dir, images_dir, header_lines, point_lines, tier2_ids, analysis)
     build_tier("tier3", 3, output_dir, sparse_dir, images_dir, header_lines, point_lines, tier3_ids, analysis)
 
-    print(f"  Dropped:          {dropped:>7,} points ({100*dropped/len(point_lines):.1f}%) — error ≥ {t3_max_error:.3f}px")
+    t3_err_display = t3_max_error if custom_thresholds else 3 * median_error
+    print(f"  Dropped:          {dropped:>7,} points ({100*dropped/len(point_lines):.1f}%) -- error >= {t3_err_display:.3f}px")
 
     # Write tier manifest
+    if not custom_thresholds:
+        t1_max_error = median_error
+        t2_max_error = 2 * median_error
+        t3_max_error = 3 * median_error
     manifest = {
         "dataset": str(dataset),
         "output_dir": str(output_dir),
