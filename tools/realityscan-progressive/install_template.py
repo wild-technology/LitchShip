@@ -97,14 +97,21 @@ def install_to_report_xml(report_xml_path: str, dry_run: bool = False) -> bool:
         print(f"  Already registered in Report.xml (GUID {TEMPLATE_GUID})")
         return False
 
-    # Find the closing </formats> tag and insert before it
-    close_tag = "</formats>"
-    if close_tag not in content:
-        print(f"ERROR: Could not find {close_tag} in Report.xml", file=sys.stderr)
+    # Find the closing tag and insert our format entry before it.
+    # RealityScan versions vary: older uses <formats>...</formats>,
+    # 2.0+ uses <Report>...</Report> as the root element.
+    close_tag = None
+    for candidate in ("</formats>", "</Formats>", "</Report>", "</report>"):
+        if candidate in content:
+            close_tag = candidate
+            break
+
+    if close_tag is None:
+        print("ERROR: Could not find closing tag (</Report> or </formats>) in Report.xml", file=sys.stderr)
         print("  You may need to add the entry manually. See the template file for the XML snippet.", file=sys.stderr)
         sys.exit(1)
 
-    new_content = content.replace(close_tag, FORMAT_ENTRY + "\n" + close_tag)
+    new_content = content.replace(close_tag, "\n" + FORMAT_ENTRY + "\n" + close_tag, 1)
 
     if dry_run:
         print(f"  [DRY RUN] Would add to Report.xml:")
