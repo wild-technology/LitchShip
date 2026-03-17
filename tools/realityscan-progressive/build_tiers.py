@@ -79,10 +79,30 @@ def parse_points3d_raw(filepath: Path) -> tuple[list[str], dict[int, str]]:
     return header_lines, point_lines
 
 
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+
+
+def _is_pose_line(parts: list) -> bool:
+    """Check if a line looks like a pose line (10+ fields, integer ID, image filename at [9])."""
+    if len(parts) < 10:
+        return False
+    try:
+        int(parts[0])
+        int(parts[8])
+    except ValueError:
+        return False
+    name = parts[9]
+    dot_pos = name.rfind(".")
+    if dot_pos < 0:
+        return False
+    return name[dot_pos:].lower() in _IMAGE_EXTENSIONS
+
+
 def rewrite_images_txt(src_path: Path, dst_path: Path, kept_point_ids: set[int]):
     """Copy images.txt, replacing POINT3D_ID references to removed points with -1.
 
     Preserves paired-line format. All images are kept — only observation references change.
+    Handles missing/empty observation lines (images with zero 2D points).
     """
     with open(src_path, "r") as f:
         lines = f.readlines()
@@ -99,37 +119,45 @@ def rewrite_images_txt(src_path: Path, dst_path: Path, kept_point_ids: set[int])
             i += 1
             continue
 
+        parts = stripped.split()
+
+        # Detect pose lines vs observation lines
+        if not _is_pose_line(parts):
+            # Stray observation line without a pose — pass through
+            output.append(line)
+            i += 1
+            continue
+
         # Line 1 of pair: pose data — pass through unchanged
         output.append(line)
         i += 1
 
         # Skip any comment/blank lines before the observation line
         while i < len(lines):
-            next_line = lines[i]
-            next_stripped = next_line.strip()
+            next_stripped = lines[i].strip()
             if not next_stripped or next_stripped.startswith("#"):
-                output.append(next_line)
+                output.append(lines[i])
                 i += 1
             else:
                 break
 
-        # Line 2 of pair: observations (X Y POINT3D_ID) ...
+        # Check if next line is an observation line or another pose line
         if i < len(lines):
-            obs_line = lines[i]
-            obs_stripped = obs_line.strip()
-            i += 1
+            obs_stripped = lines[i].strip()
+            obs_parts = obs_stripped.split() if obs_stripped else []
 
-            if not obs_stripped:
-                output.append(obs_line)
+            if not obs_stripped or _is_pose_line(obs_parts):
+                # No observation line for this image — insert empty obs line
+                output.append("\n")
                 continue
 
-            parts = obs_stripped.split()
+            # Line 2 of pair: observations (X Y POINT3D_ID) ...
+            i += 1
             new_parts = []
-            # Process in triplets: X Y POINT3D_ID
-            for j in range(0, len(parts) - len(parts) % 3, 3):
-                x_str = parts[j]
-                y_str = parts[j + 1]
-                p3d_id = int(parts[j + 2])
+            for j in range(0, len(obs_parts) - len(obs_parts) % 3, 3):
+                x_str = obs_parts[j]
+                y_str = obs_parts[j + 1]
+                p3d_id = int(obs_parts[j + 2])
 
                 if p3d_id != -1 and p3d_id not in kept_point_ids:
                     new_parts.extend([x_str, y_str, "-1"])

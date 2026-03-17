@@ -320,6 +320,7 @@ Color filtering examples:
     parser.add_argument("--color-stats", action="store_true",
                         help="Print color histogram and stats (can combine with --dry-run)")
 
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default: 42)")
     parser.add_argument("--dry-run", action="store_true", help="Report only, don't write output")
     args = parser.parse_args()
 
@@ -450,7 +451,8 @@ Color filtering examples:
                 print(f"  Auto-detecting connectivity radius...")
                 tree = cKDTree(current_positions)
                 sample_size = min(50000, len(current_positions))
-                sample_idx = np.random.choice(len(current_positions), sample_size, replace=False)
+                rng = np.random.default_rng(seed=args.seed)
+                sample_idx = rng.choice(len(current_positions), sample_size, replace=False)
                 dists, _ = tree.query(current_positions[sample_idx], k=2, workers=-1)
                 nn_dist = np.median(dists[:, 1])
                 # Use 3x median nearest-neighbor distance as connectivity radius

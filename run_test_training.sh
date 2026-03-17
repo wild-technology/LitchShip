@@ -229,18 +229,7 @@ nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader
 echo ""
 
 info "Launching training..."
-time "$BINARY" \
-    -d "$TEST_DIR" \
-    -o "$OUTPUT_DIR" \
-    --strategy adc \
-    --max-cap "$MAX_GAUSSIANS" \
-    -i "$TEST_ITERATIONS" \
-    -r 2 \
-    --min-opacity 0.1 \
-    --enable-sparsity \
-    --prune-ratio 0.6 \
-    --enable-mip \
-    --headless
+time run_lf_training "$BINARY" "$TEST_DIR" "$OUTPUT_DIR" adc "$MAX_GAUSSIANS" "$TEST_ITERATIONS" 2
 
 TRAIN_EXIT=$?
 
@@ -249,15 +238,13 @@ if [ $TRAIN_EXIT -eq 0 ]; then
     log "Training completed successfully!"
 
     # Post-process: remove low-opacity floaters and spatial outliers
-    FINAL_PLY=$(find "$OUTPUT_DIR" -name '*.ply' -type f -not -name '*_cleaned*' | sort | tail -1)
+    FINAL_PLY="$LF_LAST_PLY"
     CLEAN_SCRIPT="$SCRIPT_DIR/clean_splat.py"
     if [ -n "$FINAL_PLY" ] && [ -f "$CLEAN_SCRIPT" ]; then
         echo ""
         echo "=== Post-Processing: Outlier Removal ==="
-        CLEANED_PLY="${FINAL_PLY%.ply}_cleaned.ply"
-        python3 "$CLEAN_SCRIPT" "$FINAL_PLY" "$CLEANED_PLY" \
-            -k 20 -s 2.0 -p 3 --opacity-min 0.05
-        [ -f "$CLEANED_PLY" ] && log "Cleaned: $CLEANED_PLY ($(du -h "$CLEANED_PLY" | cut -f1))"
+        run_lf_clean "$CLEAN_SCRIPT" "$FINAL_PLY" -k 20 -s 2.0 -p 3 --opacity-min 0.05
+        [ -f "$LF_LAST_CLEANED_PLY" ] && log "Cleaned: $LF_LAST_CLEANED_PLY ($(du -h "$LF_LAST_CLEANED_PLY" | cut -f1))"
     fi
 
     echo ""

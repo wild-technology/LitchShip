@@ -111,6 +111,7 @@ python3 clean_splat.py input.ply output.ply --bbox -10,-10,-10,10,10,10 --scale-
 8. **Do NOT install nvidia drivers inside WSL2** — the Windows driver provides libcuda.so
 9. **WSL2 has no display** — must use `--headless` flag for training
 10. **sm_120** (Blackwell) — use `-DBUILD_CUDA_PTX_ONLY=ON` as fallback if native kernels crash
+11. **Full-res OOM at high gaussian counts** — 4.6M gaussians at 3702x2091 OOMs on 32 GB VRAM. At full resolution (`-r 1`), keep `--max-cap` at ~3M or below. Use `-r 2` for large point clouds (>3M COLMAP points) to stay within VRAM.
 
 ## Benchmark Results (RTX 5090, 32 GB VRAM)
 

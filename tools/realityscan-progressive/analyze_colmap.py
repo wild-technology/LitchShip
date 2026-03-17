@@ -73,23 +73,55 @@ def parse_points3d(filepath: Path) -> dict:
     return points
 
 
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+
+
+def _is_pose_line(parts: list) -> bool:
+    """Check if a line looks like a pose line (10+ fields, integer ID, image filename at [9])."""
+    if len(parts) < 10:
+        return False
+    # Field 0 must be an integer image ID
+    try:
+        int(parts[0])
+    except ValueError:
+        return False
+    # Field 8 must be an integer camera ID
+    try:
+        int(parts[8])
+    except ValueError:
+        return False
+    # Field 9 should be an image filename with a known image extension
+    name = parts[9]
+    dot_pos = name.rfind(".")
+    if dot_pos < 0:
+        return False
+    return name[dot_pos:].lower() in _IMAGE_EXTENSIONS
+
+
 def parse_images(filepath: Path) -> dict:
     """Parse images.txt (paired-line format) → dict of {image_id: {name, camera_id, qvec, tvec, observations}}.
 
     observations is a list of (x, y, point3d_id) tuples.
+    Handles missing/empty observation lines (images with zero 2D points).
     """
     images = {}
     with open(filepath, "r") as f:
-        lines = [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
+        lines = f.readlines()
 
     # Paired-line format: line 1 = pose data, line 2 = 2D observations
+    # Some images may have blank/missing observation lines, so we detect pose
+    # lines by their structure rather than relying strictly on alternation.
     i = 0
-    while i + 1 < len(lines):
-        pose_parts = lines[i].split()
-        obs_parts = lines[i + 1].split()
-        i += 2
+    while i < len(lines):
+        line = lines[i].strip()
+        i += 1
 
-        if len(pose_parts) < 10:
+        # Skip comments and blank lines
+        if not line or line.startswith("#"):
+            continue
+
+        pose_parts = line.split()
+        if not _is_pose_line(pose_parts):
             continue
 
         image_id = int(pose_parts[0])
@@ -98,12 +130,27 @@ def parse_images(filepath: Path) -> dict:
         camera_id = int(pose_parts[8])
         name = pose_parts[9]
 
-        # Parse 2D observations: triplets of (X, Y, POINT3D_ID)
+        # Read observation line — skip blank/comment lines, and detect if we hit
+        # the next pose line (meaning this image had no observations)
         observations = []
-        for j in range(0, len(obs_parts) - len(obs_parts) % 3, 3):
-            px, py = float(obs_parts[j]), float(obs_parts[j + 1])
-            p3d_id = int(obs_parts[j + 2])
-            observations.append((px, py, p3d_id))
+        while i < len(lines):
+            obs_line = lines[i].strip()
+            if not obs_line or obs_line.startswith("#"):
+                i += 1
+                continue
+
+            obs_parts = obs_line.split()
+            # If this looks like another pose line, this image had no observations
+            if _is_pose_line(obs_parts):
+                break
+
+            # Parse observation triplets
+            i += 1
+            for j in range(0, len(obs_parts) - len(obs_parts) % 3, 3):
+                px, py = float(obs_parts[j]), float(obs_parts[j + 1])
+                p3d_id = int(obs_parts[j + 2])
+                observations.append((px, py, p3d_id))
+            break
 
         images[image_id] = {
             "name": name,

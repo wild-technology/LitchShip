@@ -56,8 +56,25 @@ detect_gpu() {
 setup_paths() {
     local repo_dir="${1:-$HOME/gaussian-splatting-cuda}"
     CUDA_ROOT="/usr/local/cuda"
-    export PATH="$HOME/.local/bin:$CUDA_ROOT/bin:$PATH"
-    export LD_LIBRARY_PATH="$repo_dir/build:$CUDA_ROOT/lib64:$HOME/.local/lib:${LD_LIBRARY_PATH:-}"
+
+    # Deduplicate: only prepend paths not already present
+    local -a new_path_dirs=("$HOME/.local/bin" "$CUDA_ROOT/bin")
+    for d in "${new_path_dirs[@]}"; do
+        case ":$PATH:" in
+            *":$d:"*) ;;
+            *) PATH="$d:$PATH" ;;
+        esac
+    done
+    export PATH
+
+    local -a new_ld_dirs=("$repo_dir/build" "$CUDA_ROOT/lib64" "$HOME/.local/lib")
+    for d in "${new_ld_dirs[@]}"; do
+        case ":${LD_LIBRARY_PATH:-}:" in
+            *":$d:"*) ;;
+            *) LD_LIBRARY_PATH="$d:${LD_LIBRARY_PATH:-}" ;;
+        esac
+    done
+    export LD_LIBRARY_PATH
 }
 
 # ─── Binary Discovery ────────────────────────────────────────────────────────
@@ -127,6 +144,75 @@ fix_extension_mismatch() {
         error "Cannot find image for: $sample_ref"
         exit 1
     fi
+}
+
+# ─── COLMAP File Helpers ─────────────────────────────────────────────────────
+# Copy COLMAP text files from source to work_dir/sparse/0/, handling
+# case-insensitive filenames (Cameras.txt vs cameras.txt).
+#
+# Usage: copy_colmap_files /path/to/source /path/to/work_dir
+
+# ─── Training Invocation ────────────────────────────────────────────────────
+# Build and run a LichtFeld Studio training command with standard ADC flags.
+#
+# Usage: run_lf_training <binary> <data_dir> <output_dir> <strategy> \
+#            <max_cap> <iterations> <resize_factor> [extra_flags...]
+#
+# Returns: exit code from the training binary.
+# Sets: LF_LAST_LOG to the log file path, LF_LAST_PLY to the output PLY.
+
+run_lf_training() {
+    local binary="$1" data_dir="$2" output_dir="$3" strategy="$4"
+    local max_cap="$5" iterations="$6" resize_factor="$7"
+    shift 7
+    local extra_flags=("$@")
+
+    mkdir -p "$output_dir"
+    local log_file="$output_dir/training.log"
+    LF_LAST_LOG="$log_file"
+
+    local cmd=("$binary"
+        -d "$data_dir"
+        -o "$output_dir"
+        --strategy "$strategy"
+        --max-cap "$max_cap"
+        -i "$iterations"
+        -r "$resize_factor"
+        --headless
+    )
+
+    # Standard ADC flags (only added for adc strategy)
+    if [ "$strategy" = "adc" ]; then
+        cmd+=(--min-opacity 0.1 --enable-sparsity --prune-ratio 0.6 --enable-mip)
+    fi
+
+    # Append any extra flags
+    cmd+=("${extra_flags[@]}")
+
+    "${cmd[@]}" 2>&1 | tee "$log_file"
+    local exit_code=${PIPESTATUS[0]}
+
+    # Find output PLY
+    LF_LAST_PLY=$(find "$output_dir" -name '*.ply' -type f ! -name '*cleaned*' | sort | tail -1)
+
+    return "$exit_code"
+}
+
+# ─── Post-Training Cleanup ─────────────────────────────────────────────────
+# Run clean_splat.py on a PLY file.
+#
+# Usage: run_lf_clean <clean_script> <input_ply> [clean_flags...]
+# Sets: LF_LAST_CLEANED_PLY
+
+run_lf_clean() {
+    local clean_script="$1" input_ply="$2"
+    shift 2
+    local clean_flags=("$@")
+
+    local cleaned_ply="${input_ply%.ply}_cleaned.ply"
+    LF_LAST_CLEANED_PLY="$cleaned_ply"
+
+    python3 "$clean_script" "$input_ply" "$cleaned_ply" "${clean_flags[@]}"
 }
 
 # ─── COLMAP File Helpers ─────────────────────────────────────────────────────

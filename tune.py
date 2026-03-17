@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 # ─── VRAM Model ──────────────────────────────────────────────────────────────
@@ -795,9 +796,10 @@ class TunerApp:
                     return
             except FileNotFoundError:
                 continue
-        with open("/tmp/lichtfeld_cmd.sh", "w") as f:
+        fallback_path = os.path.join(tempfile.gettempdir(), "lichtfeld_cmd.sh")
+        with open(fallback_path, "w") as f:
             f.write(cmd + "\n")
-        self._set_message("Saved to /tmp/lichtfeld_cmd.sh (no clipboard tool found)")
+        self._set_message(f"Saved to {fallback_path} (no clipboard tool found)")
 
     def run(self):
         self.scr.timeout(100)

@@ -298,21 +298,9 @@ warn "Monitor in another terminal:  $OUTPUT_DIR/monitor.sh $LOG_FILE $OUTPUT_DIR
 echo ""
 
 # ADC best config: scale pruning + sparsity + mip filtering
-"$BINARY" \
-    -d "$WORK_DIR" \
-    -o "$OUTPUT_DIR" \
-    --strategy "$STRATEGY" \
-    --max-cap "$MAX_GAUSSIANS" \
-    -i "$ITERATIONS" \
-    -r "$RESIZE_FACTOR" \
-    --min-opacity 0.1 \
-    --enable-sparsity \
-    --prune-ratio 0.6 \
-    --enable-mip \
-    --headless \
-    2>&1 | tee "$LOG_FILE"
+run_lf_training "$BINARY" "$WORK_DIR" "$OUTPUT_DIR" "$STRATEGY" "$MAX_GAUSSIANS" "$ITERATIONS" "$RESIZE_FACTOR"
 
-TRAIN_EXIT=${PIPESTATUS[0]}
+TRAIN_EXIT=$?
 
 echo ""
 if [ $TRAIN_EXIT -eq 0 ]; then
@@ -324,7 +312,7 @@ if [ $TRAIN_EXIT -eq 0 ]; then
     info "Total output size: $(du -sh "$OUTPUT_DIR" | cut -f1)"
     echo ""
 
-    FINAL_PLY=$(find "$OUTPUT_DIR" -name '*.ply' -type f -not -name '*_cleaned*' | sort | tail -1)
+    FINAL_PLY="$LF_LAST_PLY"
     if [ -n "$FINAL_PLY" ]; then
         PLY_SIZE=$(du -h "$FINAL_PLY" | cut -f1)
 
@@ -333,14 +321,12 @@ if [ $TRAIN_EXIT -eq 0 ]; then
         if [ -f "$CLEAN_SCRIPT" ]; then
             echo ""
             echo "=== Post-Processing: Outlier Removal ==="
-            CLEANED_PLY="${FINAL_PLY%.ply}_cleaned.ply"
-            python3 "$CLEAN_SCRIPT" "$FINAL_PLY" "$CLEANED_PLY" \
-                -k 20 -s 2.0 -p 3 --opacity-min 0.05
+            run_lf_clean "$CLEAN_SCRIPT" "$FINAL_PLY" -k 20 -s 2.0 -p 3 --opacity-min 0.05
 
-            if [ -f "$CLEANED_PLY" ]; then
-                CLEAN_SIZE=$(du -h "$CLEANED_PLY" | cut -f1)
-                log "Cleaned splat: $CLEANED_PLY ($CLEAN_SIZE)"
-                FINAL_PLY="$CLEANED_PLY"
+            if [ -f "$LF_LAST_CLEANED_PLY" ]; then
+                CLEAN_SIZE=$(du -h "$LF_LAST_CLEANED_PLY" | cut -f1)
+                log "Cleaned splat: $LF_LAST_CLEANED_PLY ($CLEAN_SIZE)"
+                FINAL_PLY="$LF_LAST_CLEANED_PLY"
                 PLY_SIZE="$CLEAN_SIZE"
             else
                 warn "Cleaning failed, using raw splat"
