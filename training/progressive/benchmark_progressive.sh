@@ -12,8 +12,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LITCHSHIP_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-source "$LITCHSHIP_ROOT/lib/common.sh"
+_root="$SCRIPT_DIR"; while [ "$_root" != "/" ] && [ ! -f "$_root/lib/common.sh" ]; do _root="$(dirname "$_root")"; done
+source "$_root/lib/common.sh"
+# LITCHSHIP_ROOT is now set automatically by common.sh
 
 STAGING_DIR="${1:?Usage: $0 <staging-dir>}"
 STAGING_DIR="$(cd "$STAGING_DIR" && pwd)"
@@ -180,7 +181,7 @@ echo -e "${BOLD}============================================${NC}"
 echo -e "${BOLD}  Cleaning Evaluation${NC}"
 echo -e "${BOLD}============================================${NC}"
 
-CLEAN_SCRIPT="$LITCHSHIP_ROOT/clean_splat.py"
+CLEAN_SCRIPT="$LITCHSHIP_ROOT/training/clean_splat.py"
 
 # Cleaning configs to test
 declare -A CLEAN_CONFIGS

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>H2102 Shipwreck Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; }
+
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 20px;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid #333;
+  }
+  #topbar h1 {
+    font-size: 16px; font-weight: 600; margin-right: 20px;
+    color: #8cf;
+  }
+  .section-btn {
+    padding: 6px 18px; border: 1px solid #555; border-radius: 4px;
+    background: transparent; color: #ccc; cursor: pointer;
+    font-size: 14px; transition: all 0.15s;
+  }
+  .section-btn:hover { border-color: #8cf; color: #8cf; }
+  .section-btn.active { background: #8cf; color: #111; border-color: #8cf; font-weight: 600; }
+  .section-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #info {
+    margin-left: auto; font-size: 12px; color: #888;
+  }
+
+  #viewer-container {
+    width: 100vw; height: 100vh;
+  }
+
+  #loading-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.8);
+    flex-direction: column; gap: 16px;
+  }
+  #loading-overlay.visible { display: flex; }
+
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid #333; border-top-color: #8cf;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #loading-text { font-size: 14px; color: #aaa; }
+
+  #error-msg {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    z-index: 150; padding: 10px 24px; border-radius: 6px;
+    background: #a33; color: #fff; font-size: 14px;
+    display: none; max-width: 80vw; text-align: center;
+  }
+  #error-msg.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>H2102 Shipwreck</h1>
+  <button class="section-btn" data-section="bow">Bow</button>
+  <button class="section-btn" data-section="amid">Amidships</button>
+  <button class="section-btn" data-section="stern">Stern</button>
+  <span id="info">Loading library...</span>
+</div>
+
+<div id="viewer-container"></div>
+
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div id="loading-text">Loading splat...</div>
+</div>
+
+<div id="error-msg"></div>
+
+<script type="module">
+const CDN_URL = 'https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.2/build/gaussian-splats-3d.module.js';
+
+const container = document.getElementById('viewer-container');
+const overlay = document.getElementById('loading-overlay');
+const loadingText = document.getElementById('loading-text');
+const errorMsg = document.getElementById('error-msg');
+const infoSpan = document.getElementById('info');
+
+let GaussianSplats3D = null;
+let viewer = null;
+let currentSection = null;
+
+function showLoading(msg) {
+  loadingText.textContent = msg || 'Loading splat...';
+  overlay.classList.add('visible');
+}
+
+function hideLoading() {
+  overlay.classList.remove('visible');
+}
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.classList.add('visible');
+  setTimeout(() => errorMsg.classList.remove('visible'), 8000);
+}
+
+function updateButtons(active) {
+  document.querySelectorAll('.section-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.section === active);
+  });
+}
+
+async function loadSection(section) {
+  if (section === currentSection) return;
+  if (!GaussianSplats3D) {
+    showError('Library not loaded yet — check console for errors');
+    return;
+  }
+
+  const url = `./splats/${section}_cleaned.ply`;
+  showLoading(`Loading ${section}...`);
+  updateButtons(section);
+
+  try {
+    if (viewer) {
+      viewer.dispose();
+      viewer = null;
+      while (container.firstChild) container.removeChild(container.firstChild);
+    }
+
+    viewer = new GaussianSplats3D.Viewer({
+      cameraUp: [0, -1, 0],
+      initialCameraLookAt: [0, 0, 0],
+      initialCameraPosition: [0, 0, 5],
+      rootElement: container,
+      selfDrivenMode: true,
+      sharedMemoryForWorkers: false,
+    });
+
+    await viewer.addSplatScene(url, {
+      showLoadingUI: false,
+      progressiveLoad: true,
+    });
+
+    currentSection = section;
+    infoSpan.textContent = `${section} loaded`;
+    hideLoading();
+
+  } catch (err) {
+    hideLoading();
+    console.error('Load failed:', err);
+    showError(`Failed to load ${section}: ${err.message || err}`);
+    currentSection = null;
+    updateButtons(null);
+  }
+}
+
+// Wire up buttons
+document.querySelectorAll('.section-btn').forEach(btn => {
+  btn.addEventListener('click', () => loadSection(btn.dataset.section));
+});
+
+// Check which splats exist and disable missing ones
+async function checkAvailability() {
+  for (const section of ['bow', 'amid', 'stern']) {
+    try {
+      const resp = await fetch(`./splats/${section}_cleaned.ply`, { method: 'HEAD' });
+      if (!resp.ok) {
+        const btn = document.querySelector(`[data-section="${section}"]`);
+        if (btn) { btn.disabled = true; btn.title = 'Not yet trained'; }
+      }
+    } catch { /* ignore */ }
+  }
+}
+
+// Load library from CDN
+async function init() {
+  try {
+    GaussianSplats3D = await import(CDN_URL);
+    infoSpan.textContent = 'Ready — click a section';
+    console.log('GaussianSplats3D loaded');
+    checkAvailability();
+  } catch (err) {
+    console.error('Failed to load GaussianSplats3D:', err);
+    infoSpan.textContent = 'Library failed to load';
+    showError(`CDN load failed: ${err.message}. Check internet / console.`);
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>

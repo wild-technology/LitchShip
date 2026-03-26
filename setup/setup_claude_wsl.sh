@@ -3,7 +3,7 @@
 # Install Claude Code in WSL2 and bootstrap the LitchShip project
 #
 # Run this in your WSL terminal:
-#   chmod +x setup_claude_wsl.sh && ./setup_claude_wsl.sh
+#   chmod +x setup_claude_wsl.sh && ./setup/setup_claude_wsl.sh
 # =============================================================================
 set -euo pipefail
 
@@ -150,10 +150,10 @@ Run the existing scripts in order:
 
 \`\`\`bash
 # 1. Build everything (idempotent — skips completed steps)
-./setup_lichtfeld.sh
+./setup/build_lichtfeld.sh
 
 # 2. Test training (30 images, 3K iterations)
-./run_test_training.sh
+./training/test_train.sh
 \`\`\`
 
 If setup_lichtfeld.sh fails, debug the specific step that failed.

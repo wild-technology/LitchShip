@@ -34,24 +34,34 @@
 ## Key Files
 | File | Purpose |
 |------|---------|
-| `lib/common.sh` | Shared functions (colors, logging, GPU, paths, binary discovery) |
-| `clean_splat.py` | Post-processing: opacity filter + iterative statistical outlier removal |
-| `setup_lichtfeld.sh` | Full environment + build setup (supports `--no-sudo`) |
-| `run_test_training.sh` | Quick 30-image test run to verify the build |
-| `train_full.sh` | Full resolution production training pipeline |
-| `benchmark.sh` | Multi-config benchmark runner (ADC + MCMC configs) |
-| `setup_claude_wsl.sh` | Bootstrap script for Claude Code in WSL |
-| `overlay-ports/sdl3/` | vcpkg overlay port (disables XTEST/ibus) |
+| `lib/common.sh` | Shared functions (colors, logging, GPU, paths, COLMAP detection) |
+| `setup/build_lichtfeld.sh` | Full environment + build setup (supports `--no-sudo`) |
+| `setup/setup_claude_wsl.sh` | Bootstrap script for Claude Code in WSL |
+| `setup/overlay-ports/sdl3/` | vcpkg overlay port (disables XTEST/ibus) |
+| `colmap/reconstruct.sh` | COLMAP reconstruction pipeline (extract, match, map) |
+| `colmap/import_nav.py` | Navigation/GPS import with gravity priors |
+| `colmap/assign_cameras.py` | Multi-camera rig assignment by filename prefix |
+| `colmap/train_vocab_tree.sh` | FAISS vocabulary tree trainer |
+| `colmap/monitor.py` | Real-time web dashboard for pipeline monitoring |
+| `colmap/report.py` | PDF benchmark report generator |
+| `colmap/configs/` | Camera configuration files per survey |
+| `training/train.sh` | Full resolution production training pipeline |
+| `training/test_train.sh` | Quick 30-image test run to verify the build |
+| `training/benchmark.sh` | Multi-config benchmark runner (ADC + MCMC configs) |
+| `training/clean_splat.py` | Post-processing: opacity filter + statistical outlier removal |
+| `training/tune.py` | Interactive parameter tuning |
+| `training/progressive/` | Progressive training pipeline (tiered point clouds) |
+| `datasets/` | Dataset-specific preparation and training scripts |
 | `SETUP_LICHTFELD_WSL.md` | Detailed manual setup reference |
 
 ## How to Build
 
 ```bash
 # With sudo:
-./setup_lichtfeld.sh
+./setup/build_lichtfeld.sh
 
 # Without sudo (CI, containers, Claude Code sessions):
-./setup_lichtfeld.sh --no-sudo
+./setup/build_lichtfeld.sh --no-sudo
 ```
 
 The script is idempotent — re-running skips completed steps.
@@ -90,13 +100,13 @@ python3 clean_splat.py input.ply output.ply --bbox -10,-10,-10,10,10,10 --scale-
 
 ```bash
 # Quick test (30 images, 3K iterations, ADC):
-./run_test_training.sh /path/to/dataset
+./training/test_train.sh /path/to/dataset
 
 # Full production training (30K iterations, ADC):
-./train_full.sh /path/to/dataset
+./training/train.sh /path/to/dataset
 
 # Benchmark multiple configs:
-./benchmark.sh /path/to/dataset [/path/to/splat/output]
+./training/benchmark.sh /path/to/dataset [/path/to/splat/output]
 ```
 
 ## Known Bugs

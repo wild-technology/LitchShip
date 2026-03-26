@@ -6,3 +6,4 @@
 crash_dump*
 __pycache__/
 .pytest_cache/
+viewer/splats/*.ply

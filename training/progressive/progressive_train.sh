@@ -26,8 +26,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LITCHSHIP_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-source "$LITCHSHIP_ROOT/lib/common.sh"
+_root="$SCRIPT_DIR"; while [ "$_root" != "/" ] && [ ! -f "$_root/lib/common.sh" ]; do _root="$(dirname "$_root")"; done
+source "$_root/lib/common.sh"
+# LITCHSHIP_ROOT is now set automatically by common.sh
 
 # ─── Arguments ───────────────────────────────────────────────────────────────
 
@@ -178,7 +179,7 @@ declare -A STAGE_DESC=(
 )
 
 # Per-stage cleaning configs (gentler for early stages since ADC already prunes)
-CLEAN_SCRIPT="$LITCHSHIP_ROOT/clean_splat.py"
+CLEAN_SCRIPT="$LITCHSHIP_ROOT/training/clean_splat.py"
 declare -A STAGE_CLEAN_FLAGS=(
     [1]="--opacity-min 0.05 -k 20 -s 3.5 -p 1"
     [2]="--opacity-min 0.05 -k 20 -s 3.0 -p 2"

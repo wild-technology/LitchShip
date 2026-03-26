@@ -2,16 +2,33 @@
 # =============================================================================
 # LitchShip — Shared library for all training/benchmark scripts
 #
-# Usage: source "$SCRIPT_DIR/lib/common.sh"
+# Usage (from any script, at any depth):
+#   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#   source "$(find_litchship_root "$SCRIPT_DIR")/lib/common.sh"
+#
+# Or simpler — source by searching upward:
+#   _dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#   while [ "$_dir" != "/" ] && [ ! -f "$_dir/lib/common.sh" ]; do _dir="$(dirname "$_dir")"; done
+#   source "$_dir/lib/common.sh"
+#
+# After sourcing, LITCHSHIP_ROOT is set automatically.
 #
 # Provides:
+#   Project:   LITCHSHIP_ROOT (auto-set on source)
 #   Colors:    RED GREEN YELLOW CYAN BOLD DIM NC
 #   Logging:   log, warn, error, info
 #   GPU:       detect_gpu (sets GPU_NAME, GPU_MEM)
+#   COLMAP:    detect_colmap (sets COLMAP_BIN, COLMAP_HAS_CUDA)
 #   Paths:     setup_paths (sets PATH, LD_LIBRARY_PATH, CUDA_ROOT)
 #   Binary:    find_binary (sets BINARY)
 #   Data:      fix_extension_mismatch, copy_colmap_files
 # =============================================================================
+
+# ─── Project Root (auto-detected from this file's location) ────────────────
+# This is the canonical way to find the project root. All scripts should
+# reference paths relative to LITCHSHIP_ROOT, never hardcoded relative depths.
+
+LITCHSHIP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # ─── Colors ──────────────────────────────────────────────────────────────────
 

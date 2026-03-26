@@ -19,13 +19,13 @@ This project reconstructs 3D sparse point clouds from underwater ROV imagery of 
 #### Step 1: Read these files in order
 1. `CLAUDE.md` — project conventions, build system, training strategy, known bugs
 2. `ONBOARDING.md` — this file
-3. `tools/colmap_reconstruct.sh` — the main pipeline script (~670 lines)
-4. `tools/import_gps_to_colmap.py` — navigation/pose prior import
-5. `tools/assign_cameras.py` — multi-camera rig assignment
-6. `tools/train_vocab_tree.sh` — vocabulary tree trainer
-7. `tools/colmap_monitor.py` — real-time web dashboard
-8. `tools/generate_report.py` — PDF benchmark report generator
-9. `tools/camera_configs/h2103d_northampton.conf` — camera definitions
+3. `colmap/reconstruct.sh` — the main pipeline script (~670 lines)
+4. `colmap/import_nav.py` — navigation/pose prior import
+5. `colmap/assign_cameras.py` — multi-camera rig assignment
+6. `colmap/train_vocab_tree.sh` — vocabulary tree trainer
+7. `colmap/monitor.py` — real-time web dashboard
+8. `colmap/report.py` — PDF benchmark report generator
+9. `colmap/configs/h2103d_northampton.conf` — camera definitions
 10. `lib/common.sh` — shared shell utilities
 
 #### Step 2: Understand the pipeline flow
@@ -269,13 +269,13 @@ for cam in camlower cammid camupper; do
 done
 
 # Run full pipeline
-./tools/colmap_reconstruct.sh \
+./colmap/reconstruct.sh \
     /tmp/test_100/images \
     /tmp/test_100/output \
     --mode spatial \
     --mapper global \
     --gps-file /path/to/NA173_H2103d_UTM57S.txt \
-    --camera-config tools/camera_configs/h2103d_northampton.conf \
+    --camera-config colmap/configs/h2103d_northampton.conf \
     --batch
 ```
 
@@ -452,23 +452,23 @@ while true; do sleep 3600; /tmp/check_mapper.sh; done &
 
 ```bash
 # With nav data (spatial matching + global mapper with gravity):
-./tools/colmap_reconstruct.sh \
+./colmap/reconstruct.sh \
     /path/to/images \
     /path/to/output \
     --mode spatial \
     --mapper global \
     --gps-file /path/to/nav_file.txt \
-    --camera-config tools/camera_configs/h2103d_northampton.conf
+    --camera-config colmap/configs/h2103d_northampton.conf
 
 # Without nav data (sequential matching + incremental mapper):
-./tools/colmap_reconstruct.sh \
+./colmap/reconstruct.sh \
     /path/to/images \
     /path/to/output \
     --mode sequential \
     --mapper incremental
 
 # Train vocab tree from existing database:
-./tools/train_vocab_tree.sh \
+./colmap/train_vocab_tree.sh \
     /path/to/images \
     --database /path/to/output/database.db \
     --output ~/colmap-vocab/vocab_tree_underwater_256K.bin

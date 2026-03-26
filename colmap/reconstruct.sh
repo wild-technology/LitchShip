@@ -23,8 +23,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LITCHSHIP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-source "$LITCHSHIP_ROOT/lib/common.sh"
+_root="$SCRIPT_DIR"; while [ "$_root" != "/" ] && [ ! -f "$_root/lib/common.sh" ]; do _root="$(dirname "$_root")"; done
+source "$_root/lib/common.sh"
+# LITCHSHIP_ROOT is now set automatically by common.sh
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
@@ -327,7 +328,7 @@ fi
 
 # ─── Launch Monitoring Dashboard ─────────────────────────────────────────────
 
-MONITOR_SCRIPT="$SCRIPT_DIR/colmap_monitor.py"
+MONITOR_SCRIPT="$SCRIPT_DIR/monitor.py"
 if [ -f "$MONITOR_SCRIPT" ] && [ "$DRY_RUN" = false ]; then
     python3 "$MONITOR_SCRIPT" \
         --db "$DB_PATH" \
@@ -417,7 +418,7 @@ if [ -n "$GPS_FILE" ] && [ -f "$GPS_FILE" ]; then
     echo -e "  Nav file: $GPS_FILE"
 
     if prompt_continue "Import position/orientation priors into COLMAP database?"; then
-        GPS_IMPORT_SCRIPT="$SCRIPT_DIR/import_gps_to_colmap.py"
+        GPS_IMPORT_SCRIPT="$SCRIPT_DIR/import_nav.py"
         if [ -f "$GPS_IMPORT_SCRIPT" ]; then
             IMPORT_FLAGS=()
             [ "$BATCH" = true ] && IMPORT_FLAGS+=(--batch)
@@ -675,7 +676,7 @@ echo -e "  ${CYAN}Sparse:${NC}  $SPARSE_PATH/0/"
 [ "$DENSE" = true ] && echo -e "  ${CYAN}Dense:${NC}   $DENSE_PATH/fused.ply"
 echo ""
 # Generate benchmark report
-REPORT_SCRIPT="$SCRIPT_DIR/generate_report.py"
+REPORT_SCRIPT="$SCRIPT_DIR/report.py"
 if [ -f "$REPORT_SCRIPT" ] && [ "$DRY_RUN" = false ]; then
     info "Generating benchmark report..."
     python3 "$REPORT_SCRIPT" "$OUTPUT_DIR" 2>&1 || warn "Report generation failed"

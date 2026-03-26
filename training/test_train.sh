@@ -6,7 +6,7 @@
 # to match, and runs a quick training to verify the full pipeline works.
 #
 # Usage:
-#   ./run_test_training.sh /path/to/colmap/data
+#   ./training/test_train.sh /path/to/colmap/data
 #
 # The script creates a 30-image subset at ~/data/<name>_subset/ with filtered
 # COLMAP files so the trainer only sees the selected images. COLMAP images.txt
@@ -16,7 +16,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/lib/common.sh"
+_root="$SCRIPT_DIR"; while [ "$_root" != "/" ] && [ ! -f "$_root/lib/common.sh" ]; do _root="$(dirname "$_root")"; done
+source "$_root/lib/common.sh"
+# LITCHSHIP_ROOT is now set automatically by common.sh
 
 # ─── Arguments ─────────────────────────────────────────────────────────────
 
@@ -267,5 +269,5 @@ echo "  Done!"
 echo "============================================"
 echo ""
 echo "Next steps:"
-echo "  Full training:  ./train_full.sh $DATA_SRC"
+echo "  Full training:  ./training/train.sh $DATA_SRC"
 echo ""

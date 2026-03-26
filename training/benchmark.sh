@@ -3,8 +3,8 @@
 # LichtFeld Studio — Multi-Config Benchmark
 #
 # Usage:
-#   ./benchmark.sh /path/to/colmap/dataset                  # results stay local
-#   ./benchmark.sh /path/to/colmap/dataset /path/to/splats  # copy .ply outputs
+#   ./training/benchmark.sh /path/to/colmap/dataset                  # results stay local
+#   ./training/benchmark.sh /path/to/colmap/dataset /path/to/splats  # copy .ply outputs
 #
 # The dataset must already be on the WSL native filesystem in COLMAP layout:
 #   dataset/images/*.jpg  +  dataset/sparse/0/{cameras,images,points3D}.txt
@@ -15,7 +15,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/lib/common.sh"
+_root="$SCRIPT_DIR"; while [ "$_root" != "/" ] && [ ! -f "$_root/lib/common.sh" ]; do _root="$(dirname "$_root")"; done
+source "$_root/lib/common.sh"
+# LITCHSHIP_ROOT is now set automatically by common.sh
 
 # ─── Arguments ─────────────────────────────────────────────────────────────
 

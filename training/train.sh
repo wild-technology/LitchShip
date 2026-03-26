@@ -7,7 +7,7 @@
 # training at full resolution.
 #
 # Usage:
-#   ./train_full.sh /path/to/colmap/data        # required: dataset path
+#   ./training/train.sh /path/to/colmap/data        # required: dataset path
 #
 # WARNING: Do NOT use MCMC strategy with non-default --min-opacity.
 # MCMC's cap_max parser interprets --min-opacity values as astronomical memory
@@ -17,7 +17,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/lib/common.sh"
+_root="$SCRIPT_DIR"; while [ "$_root" != "/" ] && [ ! -f "$_root/lib/common.sh" ]; do _root="$(dirname "$_root")"; done
+source "$_root/lib/common.sh"
+# LITCHSHIP_ROOT is now set automatically by common.sh
 
 # ─── Arguments ─────────────────────────────────────────────────────────────
 

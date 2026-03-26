@@ -8,13 +8,15 @@
 # building from source.
 #
 # Usage:
-#   ./setup_lichtfeld.sh              # Full setup (uses sudo for apt)
-#   ./setup_lichtfeld.sh --no-sudo    # No sudo (CI, containers, restricted)
+#   ./setup/build_lichtfeld.sh              # Full setup (uses sudo for apt)
+#   ./setup/build_lichtfeld.sh --no-sudo    # No sudo (CI, containers, restricted)
 # =============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/lib/common.sh"
+_root="$SCRIPT_DIR"; while [ "$_root" != "/" ] && [ ! -f "$_root/lib/common.sh" ]; do _root="$(dirname "$_root")"; done
+source "$_root/lib/common.sh"
+# LITCHSHIP_ROOT is now set automatically by common.sh
 
 REPO_DIR="$HOME/gaussian-splatting-cuda"
 CUDA_ROOT="/usr/local/cuda"

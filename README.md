@@ -12,22 +12,21 @@ git clone https://github.com/wild-technology/LitchShip.git
 cd LitchShip
 
 # Build everything (20-40 min first time)
-chmod +x setup_lichtfeld.sh
-./setup_lichtfeld.sh
+./setup/build_lichtfeld.sh
 
 # Test with a small subset (30 images, ~20 seconds)
-./run_test_training.sh /path/to/your/dataset
+./training/test_train.sh /path/to/your/dataset
 
 # Full production training
-./train_full.sh /path/to/your/dataset
+./training/train.sh /path/to/your/dataset
 
-# Benchmark multiple configurations
-./benchmark.sh /path/to/your/dataset
+# COLMAP reconstruction from raw images
+./colmap/reconstruct.sh /path/to/images /path/to/output --mode spatial --gps-file nav.txt
 ```
 
 ## What It Does
 
-`setup_lichtfeld.sh` handles the full build chain automatically:
+`setup/build_lichtfeld.sh` handles the full build chain automatically:
 
 1. Detects CUDA toolkit and GPU compute capability (sm_75 through sm_120)
 2. Installs build dependencies (GCC 14, CMake 3.30+, Ninja, vcpkg)
@@ -68,7 +67,7 @@ The script is idempotent -- re-running skips completed steps.
 ## Running With sudo
 
 ```bash
-./setup_lichtfeld.sh
+./setup/build_lichtfeld.sh
 ```
 
 With sudo, the script uses `apt` to install all dependencies including GCC 14, CMake, OpenGL/X11 dev libs, and autotools. This is the simplest path.
@@ -76,7 +75,7 @@ With sudo, the script uses `apt` to install all dependencies including GCC 14, C
 ## Running Without sudo
 
 ```bash
-./setup_lichtfeld.sh --no-sudo
+./setup/build_lichtfeld.sh --no-sudo
 ```
 
 Without sudo, the script automatically:

@@ -24,8 +24,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LITCHSHIP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-source "$LITCHSHIP_ROOT/lib/common.sh"
+_root="$SCRIPT_DIR"; while [ "$_root" != "/" ] && [ ! -f "$_root/lib/common.sh" ]; do _root="$(dirname "$_root")"; done
+source "$_root/lib/common.sh"
+# LITCHSHIP_ROOT is now set automatically by common.sh
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
@@ -247,7 +248,7 @@ MONITOR_PID=""
 mkdir -p "$LOGDIR"
 
 # Launch dashboard
-MONITOR_SCRIPT="$SCRIPT_DIR/colmap_monitor.py"
+MONITOR_SCRIPT="$SCRIPT_DIR/monitor.py"
 if [ -f "$MONITOR_SCRIPT" ] && [ "$DRY_RUN" = false ]; then
     python3 "$MONITOR_SCRIPT" \
         --db "$DB_PATH" \
