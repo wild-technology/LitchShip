@@ -50,6 +50,37 @@ detect_gpu() {
     log "GPU: $GPU_NAME ($GPU_MEM)"
 }
 
+# ─── COLMAP Detection ───────────────────────────────────────────────────────
+# Sets: COLMAP_BIN, COLMAP_HAS_CUDA
+# Prefers ~/.local/bin/colmap (CUDA build) over system /usr/bin/colmap
+
+detect_colmap() {
+    COLMAP_BIN="${COLMAP_BIN:-}"
+    COLMAP_HAS_CUDA=false
+
+    if [ -z "$COLMAP_BIN" ]; then
+        for candidate in "$HOME/.local/bin/colmap" "$(command -v colmap 2>/dev/null)"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+                COLMAP_BIN="$candidate"
+                break
+            fi
+        done
+    fi
+
+    if [ -z "$COLMAP_BIN" ]; then
+        error "COLMAP not found. Build from source or install via apt."
+        return 1
+    fi
+
+    local version_info
+    version_info=$("$COLMAP_BIN" help 2>&1 | head -2)
+    if echo "$version_info" | grep -q "with CUDA"; then
+        COLMAP_HAS_CUDA=true
+    fi
+
+    log "COLMAP: $COLMAP_BIN (CUDA: $COLMAP_HAS_CUDA)"
+}
+
 # ─── PATH / CUDA Setup ──────────────────────────────────────────────────────
 # Sets: CUDA_ROOT, PATH, LD_LIBRARY_PATH
 
@@ -120,7 +151,7 @@ fix_extension_mismatch() {
     [ -f "$images_txt" ] || return 0
 
     local sample_ref
-    sample_ref=$(grep -v '^#' "$images_txt" | head -1 | awk '{print $NF}')
+    sample_ref=$(awk '!/^#/{print $NF; exit}' "$images_txt")
     [ -n "$sample_ref" ] || return 0
 
     # If the referenced file already exists, no mismatch
@@ -132,7 +163,7 @@ fix_extension_mismatch() {
     local sample_base="${sample_ref%.*}"
     local ref_ext="${sample_ref##*.}"
     local actual
-    actual=$(find "$work_dir/images" -maxdepth 1 -name "${sample_base}.*" -type f | head -1)
+    actual=$(find "$work_dir/images" -maxdepth 1 -name "${sample_base}.*" -type f -print -quit)
 
     if [ -n "$actual" ]; then
         local actual_ext="${actual##*.}"
